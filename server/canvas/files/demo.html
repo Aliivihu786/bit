@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bit Agent Canvas Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #fff;
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: #888;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+      color: #00d4ff;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .counter {
+      font-size: 4rem;
+      font-weight: 700;
+      text-align: center;
+      margin: 20px 0;
+      background: linear-gradient(90deg, #00d4ff, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .log {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status.connected {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .status.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 Canvas Demo</h1>
+    <p class="subtitle">Interactive UI with live hot-reload</p>
+
+    <div class="card">
+      <h2>Connection Status</h2>
+      <span id="status" class="status disconnected">Disconnected</span>
+    </div>
+
+    <div class="card">
+      <h2>Interactive Counter</h2>
+      <div class="counter" id="counter">0</div>
+      <div class="buttons">
+        <button class="btn-primary" onclick="increment()">+ Increment</button>
+        <button class="btn-secondary" onclick="decrement()">- Decrement</button>
+        <button class="btn-secondary" onclick="reset()">Reset</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Action Log</h2>
+      <div class="log" id="log">
+        <div class="log-entry">Canvas initialized...</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Try This!</h2>
+      <p style="color: #888; line-height: 1.6;">
+        1. Click the buttons above - actions are logged<br>
+        2. Edit this file in the server - it will hot-reload!<br>
+        3. The agent can create dynamic UIs like dashboards, games, etc.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    let count = 0;
+
+    function updateCounter() {
+      document.getElementById('counter').textContent = count;
+    }
+
+    function log(message) {
+      const logEl = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+
+      // Send action to agent bridge
+      if (window.canvasSendAction) {
+        canvasSendAction({ type: 'log', message, timestamp: Date.now() });
+      }
+    }
+
+    function increment() {
+      count++;
+      updateCounter();
+      log(`Counter incremented to ${count}`);
+    }
+
+    function decrement() {
+      count--;
+      updateCounter();
+      log(`Counter decremented to ${count}`);
+    }
+
+    function reset() {
+      count = 0;
+      updateCounter();
+      log('Counter reset to 0');
+    }
+
+    // Update connection status when hot-reload connects
+    const originalLog = console.log;
+    console.log = function(...args) {
+      originalLog.apply(console, args);
+      if (args[0]?.includes?.('[Canvas] Connected')) {
+        document.getElementById('status').textContent = 'Connected';
+        document.getElementById('status').className = 'status connected';
+        log('Hot-reload connected!');
+      }
+    };
+
+    log('Canvas loaded');
+  </script>
+</body>
+</html>

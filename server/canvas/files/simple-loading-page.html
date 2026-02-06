@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Loading Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+        }
+        
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 20px;
+            color: #4a5568;
+            font-weight: 400;
+        }
+        
+        .loading-text {
+            font-size: 1rem;
+            margin-bottom: 30px;
+            color: #718096;
+        }
+        
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #4299e1;
+            border-radius: 50%;
+            margin: 0 auto 30px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .progress-container {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            margin: 30px 0;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4299e1, #38b2ac);
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+        
+        .percentage {
+            font-size: 2rem;
+            font-weight: 600;
+            margin: 20px 0;
+            color: #2d3748;
+        }
+        
+        .status-container {
+            margin: 25px 0;
+            text-align: left;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            margin: 12px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f7fafc;
+            transition: all 0.3s ease;
+        }
+        
+        .status-item.active {
+            background: #ebf8ff;
+            border-left: 4px solid #4299e1;
+        }
+        
+        .status-item.completed {
+            background: #f0fff4;
+            border-left: 4px solid #48bb78;
+        }
+        
+        .status-icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #718096;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-item.active .status-icon {
+            background: #4299e1;
+            color: white;
+        }
+        
+        .status-item.completed .status-icon {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .status-text {
+            flex: 1;
+            text-align: left;
+            font-size: 0.95rem;
+        }
+        
+        .status-details {
+            font-size: 0.85rem;
+            color: #718096;
+            margin-top: 4px;
+        }
+        
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .btn-primary {
+            background: #4299e1;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #3182ce;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+        
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .completion-message {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f0fff4;
+            border-radius: 10px;
+            border-left: 4px solid #48bb78;
+        }
+        
+        .completion-message h3 {
+            color: #276749;
+            margin-bottom: 10px;
+        }
+        
+        .checkmark {
+            font-size: 2.5rem;
+            color: #48bb78;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 480px) {
+            .loading-container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 1.5rem;
+            }
+            
+            .spinner {
+                width: 50px;
+                height: 50px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <h1>System Loading</h1>
+        
+        <div class="loading-text">
+            Initializing system components...
+        </div>
+        
+        <div class="spinner"></div>
+        
+        <div class="percentage" id="percentage">0%</div>
+        
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        
+        <div class="status-container" id="statusContainer">
+            <!-- Status items will be generated by JavaScript -->
+        </div>
+        
+        <div class="controls">
+            <button class="btn btn-primary" id="advanceBtn" onclick="advanceStep()">
+                Advance Step
+            </button>
+            <button class="btn btn-secondary" id="autoBtn" onclick="toggleAutoAdvance()">
+                Auto Advance
+            </button>
+            <button class="btn btn-secondary" id="resetBtn" onclick="resetLoading()">
+                Reset
+            </button>
+        </div>
+        
+        <div class="completion-message" id="completionMessage">
+            <div class="checkmark">✓</div>
+            <h3>Loading Complete!</h3>
+            <p>All system components have been successfully loaded and initialized.</p>
+            <p>You can now proceed to the main application.</p>
+        </div>
+    </div>
+
+    <script>
+        // Loading steps configuration
+        const loadingSteps = [
+            {
+                id: 1,
+                title: "System Initialization",
+                details: "Checking system requirements and dependencies",
+                duration: 1000
+            },
+            {
+                id: 2,
+                title: "Loading Core Modules",
+                details: "Loading essential system components",
+                duration: 1500
+            },
+            {
+                id: 3,
+                title: "Database Connection",
+                details: "Establishing connection to database servers",
+                duration: 2000
+            },
+            {
+                id: 4,
+                title: "User Authentication",
+                details: "Verifying user credentials and permissions",
+                duration: 1200
+            },
+            {
+                id: 5,
+                title: "Loading Configuration",
+                details: "Applying system settings and preferences",
+                duration: 1000
+            },
+            {
+                id: 6,
+                title: "Finalizing Setup",
+                details: "Completing initialization process",
+                duration: 800
+            }
+        ];
+
+        // State variables
+        let currentStep = 0;
+        let totalSteps = loadingSteps.length;
+        let progress = 0;
+        let autoAdvance = false;
+        let autoInterval = null;
+
+        // DOM elements
+        const percentageElement = document.getElementById('percentage');
+        const progressBar = document.getElementById('progressBar');
+        const statusContainer = document.getElementById('statusContainer');
+        const advanceBtn = document.getElementById('advanceBtn');
+        const autoBtn = document.getElementById('autoBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const completionMessage = document.getElementById('completionMessage');
+        const spinner = document.querySelector('.spinner');
+        const loadingText = document.querySelector('.loading-text');
+
+        // Initialize the status items
+        function initializeStatusItems() {
+            statusContainer.innerHTML = '';
+            loadingSteps.forEach((step, index) => {
+                const statusItem = document.createElement('div');
+                statusItem.className = 'status-item';
+                statusItem.id = `status-${step.id}`;
+                statusItem.innerHTML = `
+                    <div class="status-icon">${step.id}</div>
+                    <div class="status-text">
+                        ${step.title}
+                        <div class="status-details">${step.details}</div>
+                    </div>
+                `;
+                statusContainer.appendChild(statusItem);
+            });
+        }
+
+        // Update progress display
+        function updateProgress() {
+            progress = (currentStep / totalSteps) * 100;
+            percentageElement.textContent = `${Math.round(progress)}%`;
+            progressBar.style.width = `${progress}%`;
+            
+            // Update loading text
+            if (currentStep < totalSteps) {
+                loadingText.textContent = loadingSteps[currentStep].details;
+            } else {
+                loadingText.textContent = "Loading complete!";
+            }
+        }
+
+        // Advance to next step
+        function advanceStep() {
+            if (currentStep >= totalSteps) return;
+            
+            // Mark current step as completed
+            if (currentStep > 0) {
+                const prevStatus = document.getElementById(`status-${loadingSteps[currentStep - 1].id}`);
+                prevStatus.classList.remove('active');
+                prevStatus.classList.add('completed');
+                prevStatus.querySelector('.status-icon').textContent = '✓';
+            }
+            
+            // Activate next step
+            if (currentStep < totalSteps) {
+                const currentStatus = document.getElementById(`status-${loadingSteps[currentStep].id}`);
+                currentStatus.classList.add('active');
+                
+                // Update spinner color based on step
+                const colors = ['#4299e1', '#38b2ac', '#ed8936', '#9f7aea', '#f56565', '#48bb78'];
+                spinner.style.borderTopColor = colors[currentStep % colors.length];
+                
+                currentStep++;
+                updateProgress();
+                
+                // Check if loading is complete
+                if (currentStep === totalSteps) {
+                    completeLoading();
+                }
+            }
+        }
+
+        // Complete the loading process
+        function completeLoading() {
+            // Mark last step as completed
+            const lastStatus = document.getElementById(`status-${loadingSteps[totalSteps - 1].id}`);
+            lastStatus.classList.remove('active');
+            lastStatus.classList.add('completed');
+            lastStatus.querySelector('.status-icon').textContent = '✓';
+            
+            // Stop spinner
+            spinner.style.animation = 'none';
+            spinner.style.borderTopColor = '#48bb78';
+            
+            // Show completion message
+            completionMessage.style.display = 'block';
+            
+            // Update buttons
+            advanceBtn.disabled = true;
+            advanceBtn.textContent = 'Complete';
+            
+            // Stop auto advance if active
+            if (autoAdvance) {
+                toggleAutoAdvance();
+            }
+        }
+
+        // Toggle auto advance mode
+        function toggleAutoAdvance() {
+            autoAdvance = !autoAdvance;
+            
+            if (autoAdvance) {
+                autoBtn.textContent = 'Stop Auto';
+                autoBtn.classList.remove('btn-secondary');
+                autoBtn.classList.add('btn-primary');
+                advanceBtn.disabled = true;
+                
+                // Start auto advancing
+                autoInterval = setInterval(() => {
+                    if (currentStep < totalSteps) {
+                        advanceStep();
+                    } else {
+                        toggleAutoAdvance();
+                    }
+                }, 1500);
+            } else {
+                autoBtn.textContent = 'Auto Advance';
+                autoBtn.classList.remove('btn-primary');
+                autoBtn.classList.add('btn-secondary');
+                advanceBtn.disabled = false;
+                
+                // Stop auto advancing
+                if (autoInterval) {
+                    clearInterval(autoInterval);
+                    autoInterval = null;
+                }
+            }
+        }
+
+        // Reset loading process
+        function resetLoading() {
+            currentStep = 0;
+            progress = 0;
+            
+            // Reset status items
+            initializeStatusItems();
+            
+            // Reset progress display
+            updateProgress();
+            
+            // Reset spinner
+            spinner.style.animation = 'spin 1s linear infinite';
+            spinner.style.borderTopColor = '#4299e1';
+            
+            // Hide completion message
+            completionMessage.style.display = 'none';
+            
+            // Reset buttons
+            advanceBtn.disabled = false;
+            advanceBtn.textContent = 'Advance Step';
+            
+            // Stop auto advance if active
+            if (autoAdvance) {
+                toggleAutoAdvance();
+            }
+            
+            // Reset loading text
+            loadingText.textContent = "Initializing system components...";
+        }
+
+        // Initialize the page
+        function init() {
+            initializeStatusItems();
+            updateProgress();
+            
+            // Start with first step active
+            if (totalSteps > 0) {
+                const firstStatus = document.getElementById(`status-${loadingSteps[0].id}`);
+                firstStatus.classList.add('active');
+            }
+        }
+
+        // Start initialization
+        init();
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                if (!advanceBtn.disabled) {
+                    advanceStep();
+                }
+            }
+            
+            if (e.key === 'a' || e.key === 'A') {
+                e.preventDefault();
+                toggleAutoAdvance();
+            }
+            
+            if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                resetLoading();
+            }
+        });
+        
+        // Add hint for keyboard shortcuts
+        document.addEventListener('DOMContentLoaded', () => {
+            const hint = document.createElement('div');
+            hint.className = 'hint';
+            hint.style.marginTop = '20px';
+            hint.style.fontSize = '0.8rem';
+            hint.style.color = '#a0aec0';
+            hint.style.fontStyle = 'italic';
+            hint.textContent = 'Keyboard shortcuts: Space = Advance, A = Auto, R = Reset';
+            document.querySelector('.loading-container').appendChild(hint);
+        });
+    </script>
+</body>
+</html>

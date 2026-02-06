@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Enhanced Test Canvas</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 40px;
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    .status-panel {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 25px;
+      border-radius: 12px;
+      margin: 25px 0;
+      border-left: 5px solid #4CAF50;
+    }
+    .system-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin: 30px 0;
+    }
+    .system-card {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      transition: transform 0.3s;
+    }
+    .system-card:hover {
+      transform: translateY(-5px);
+      background: rgba(255, 255, 255, 0.2);
+    }
+    .system-card h3 {
+      margin-top: 0;
+      color: #4CAF50;
+    }
+    button {
+      background: linear-gradient(45deg, #4CAF50, #45a049);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px;
+      transition: all 0.3s;
+      font-weight: bold;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+    .counter-display {
+      font-size: 64px;
+      text-align: center;
+      margin: 40px 0;
+      font-weight: bold;
+      text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.3);
+    }
+    .test-results {
+      margin-top: 40px;
+      padding: 25px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .test-results h3 {
+      margin-top: 0;
+      color: #4CAF50;
+    }
+    #results {
+      list-style: none;
+      padding: 0;
+    }
+    #results li {
+      padding: 10px;
+      margin: 5px 0;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      border-left: 4px solid #4CAF50;
+    }
+    .timestamp {
+      font-size: 0.9em;
+      color: rgba(255, 255, 255, 0.7);
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Bit Agent System Test Dashboard</h1>
+    
+    <div class="status-panel">
+      <h2>System Status</h2>
+      <p><strong>🕒 Current Time:</strong> <span id="time">Loading...</span></p>
+      <p><strong>🌐 User Agent:</strong> <span id="user-agent"></span></p>
+      <p><strong>📊 Canvas Loaded:</strong> ✅ Successfully</p>
+    </div>
+    
+    <div class="system-grid">
+      <div class="system-card">
+        <h3>📁 File Manager</h3>
+        <p>✓ Read/Write Operations</p>
+        <p>✓ File System Access</p>
+      </div>
+      <div class="system-card">
+        <h3>🐍 Python</h3>
+        <p>✓ Code Execution</p>
+        <p>✓ Package Installation</p>
+      </div>
+      <div class="system-card">
+        <h3>⚡ JavaScript</h3>
+        <p>✓ Node.js Runtime</p>
+        <p>✓ File System Access</p>
+      </div>
+      <div class="system-card">
+        <h3>🔍 Web Tools</h3>
+        <p>✓ Search & Browse</p>
+        <p>✓ Content Extraction</p>
+      </div>
+      <div class="system-card">
+        <h3>💾 Memory</h3>
+        <p>✓ Persistent Storage</p>
+        <p>✓ Search & Recall</p>
+      </div>
+      <div class="system-card">
+        <h3>🎨 Canvas</h3>
+        <p>✓ Interactive UI</p>
+        <p>✓ Hot Reload</p>
+      </div>
+    </div>
+    
+    <div class="counter-display">
+      <span id="count">0</span>
+    </div>
+    
+    <div style="text-align: center;">
+      <button onclick="increment()">➕ Increment Counter</button>
+      <button onclick="decrement()">➖ Decrement Counter</button>
+      <button onclick="reset()">🔄 Reset Counter</button>
+      <button onclick="sendTestAction()">📤 Send Test Action</button>
+      <button onclick="simulateError()">⚠️ Simulate Error</button>
+    </div>
+    
+    <div class="test-results">
+      <h3>Live Test Results</h3>
+      <ul id="results">
+        <li>✅ Canvas loaded successfully <span class="timestamp" id="load-time"></span></li>
+        <li>✅ JavaScript execution working</li>
+        <li>✅ DOM manipulation functional</li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    // Initialize
+    let count = 0;
+    const countElement = document.getElementById('count');
+    const resultsElement = document.getElementById('results');
+    const loadTimeElement = document.getElementById('load-time');
+    
+    // Set load time
+    loadTimeElement.textContent = new Date().toLocaleTimeString();
+    
+    // Update time display
+    function updateTime() {
+      const now = new Date();
+      document.getElementById('time').textContent = now.toLocaleString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    }
+    
+    // Show user agent
+    document.getElementById('user-agent').textContent = navigator.userAgent;
+    
+    // Counter functions
+    function increment() {
+      count++;
+      updateCounter();
+      addResult(`✅ Counter incremented to ${count}`);
+    }
+    
+    function decrement() {
+      if (count > 0) {
+        count--;
+        updateCounter();
+        addResult(`✅ Counter decremented to ${count}`);
+      } else {
+        addResult(`⚠️ Counter already at minimum (0)`);
+      }
+    }
+    
+    function reset() {
+      count = 0;
+      updateCounter();
+      addResult(`🔄 Counter reset to 0`);
+    }
+    
+    function updateCounter() {
+      countElement.textContent = count;
+      // Add visual feedback
+      countElement.style.transform = 'scale(1.2)';
+      setTimeout(() => {
+        countElement.style.transform = 'scale(1)';
+      }, 200);
+    }
+    
+    // Send action to agent
+    function sendTestAction() {
+      if (typeof canvasSendAction === 'function') {
+        const actionData = {
+          type: 'test_action',
+          message: 'Interactive test from canvas',
+          timestamp: new Date().toISOString(),
+          count: count,
+          userAgent: navigator.userAgent
+        };
+        canvasSendAction(actionData);
+        addResult(`📤 Test action sent: ${JSON.stringify(actionData)}`);
+      } else {
+        addResult('⚠️ canvasSendAction function not available');
+      }
+    }
+    
+    // Simulate error for testing
+    function simulateError() {
+      try {
+        throw new Error('This is a simulated error for testing purposes');
+      } catch (error) {
+        addResult(`⚠️ Simulated error: ${error.message}`);
+      }
+    }
+    
+    // Add result to list
+    function addResult(message) {
+      const li = document.createElement('li');
+      const timestamp = new Date().toLocaleTimeString();
+      li.innerHTML = `${message} <span class="timestamp">${timestamp}</span>`;
+      resultsElement.appendChild(li);
+      
+      // Scroll to bottom
+      resultsElement.scrollTop = resultsElement.scrollHeight;
+      
+      // Limit results to 20 items
+      if (resultsElement.children.length > 20) {
+        resultsElement.removeChild(resultsElement.children[0]);
+      }
+    }
+    
+    // Initialize
+    updateTime();
+    setInterval(updateTime, 1000);
+    
+    // Listen for state changes from agent
+    window.addEventListener('canvas:state-change', (e) => {
+      console.log('State changed from agent:', e.detail);
+      addResult(`📥 Received state change: ${JSON.stringify(e.detail)}`);
+    });
+    
+    // Add initial test results
+    addResult('✅ Canvas initialization complete');
+    addResult('✅ Event listeners registered');
+    addResult('✅ Ready for interactive testing');
+  </script>
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Loading Page</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .loading-container {
+            text-align: center;
+            padding: 40px;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #00b4d8, #0077b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .loading-text {
+            font-size: 1.1rem;
+            margin-bottom: 30px;
+            opacity: 0.8;
+        }
+
+        /* Simple Spinner */
+        .spinner {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 30px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid #00b4d8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            margin: 30px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 30%;
+            background: linear-gradient(90deg, #00b4d8, #0077b6);
+            border-radius: 3px;
+            animation: loading 2s ease-in-out infinite;
+        }
+
+        @keyframes loading {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+        }
+
+        /* Dots Animation */
+        .dots {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin: 20px 0;
+        }
+
+        .dot {
+            width: 10px;
+            height: 10px;
+            background: #00b4d8;
+            border-radius: 50%;
+            opacity: 0.6;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+
+        .status {
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .percentage {
+            font-size: 1.8rem;
+            font-weight: 300;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            color: #00b4d8;
+        }
+
+        .tip {
+            font-size: 0.8rem;
+            opacity: 0.5;
+            margin-top: 30px;
+            font-style: italic;
+        }
+
+        /* Simple message animation */
+        .message {
+            font-size: 1rem;
+            margin: 15px 0;
+            min-height: 24px;
+            opacity: 0.9;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .loading-container {
+                padding: 30px 20px;
+            }
+            
+            .logo {
+                font-size: 2rem;
+            }
+            
+            .loading-text {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading-container">
+        <div class="logo">LOADING</div>
+        
+        <div class="loading-text">
+            Please wait while we load your content
+        </div>
+        
+        <div class="spinner"></div>
+        
+        <div class="percentage" id="percentage">0%</div>
+        
+        <div class="progress-container">
+            <div class="progress-bar"></div>
+        </div>
+        
+        <div class="dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+        
+        <div class="message" id="message">
+            Initializing...
+        </div>
+        
+        <div class="status" id="status">
+            Starting up...
+        </div>
+        
+        <div class="tip">
+            This is a simple loading page demo
+        </div>
+    </div>
+
+    <script>
+        // Simple loading simulation
+        let progress = 0;
+        const percentageElement = document.getElementById('percentage');
+        const messageElement = document.getElementById('message');
+        const statusElement = document.getElementById('status');
+        
+        // Loading messages
+        const messages = [
+            "Initializing...",
+            "Loading assets...",
+            "Processing data...",
+            "Almost ready...",
+            "Finalizing..."
+        ];
+        
+        const statuses = [
+            "Checking system...",
+            "Loading components...",
+            "Connecting...",
+            "Optimizing...",
+            "Ready soon!"
+        ];
+        
+        // Simple progress simulation
+        function simulateProgress() {
+            if (progress < 100) {
+                // Random progress increment
+                progress += Math.random() * 3 + 1;
+                if (progress > 100) progress = 100;
+                
+                // Update percentage
+                percentageElement.textContent = Math.floor(progress) + '%';
+                
+                // Update messages based on progress
+                const index = Math.floor(progress / 25);
+                if (index < messages.length) {
+                    messageElement.textContent = messages[index];
+                    statusElement.textContent = statuses[index];
+                }
+                
+                // Continue simulation
+                const delay = progress < 80 ? 150 : 300;
+                setTimeout(simulateProgress, delay);
+            } else {
+                // Loading complete
+                messageElement.textContent = "Complete!";
+                statusElement.textContent = "Ready to go";
+                
+                // Optional: Add completion effect
+                setTimeout(() => {
+                    messageElement.style.color = "#4cc9f0";
+                    statusElement.style.color = "#4cc9f0";
+                }, 500);
+            }
+        }
+        
+        // Start simulation after a brief delay
+        setTimeout(simulateProgress, 800);
+        
+        // Click to restart (simple interaction)
+        document.addEventListener('click', function() {
+            if (progress >= 100) {
+                progress = 0;
+                percentageElement.textContent = '0%';
+                messageElement.textContent = messages[0];
+                statusElement.textContent = statuses[0];
+                messageElement.style.color = "";
+                statusElement.style.color = "";
+                setTimeout(simulateProgress, 500);
+            }
+        });
+        
+        // Add a subtle background animation
+        function createBackgroundEffect() {
+            const container = document.querySelector('.loading-container');
+            const colors = ['#00b4d8', '#0077b6', '#03045e'];
+            
+            setInterval(() => {
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                container.style.boxShadow = `0 0 30px ${color}20`;
+            }, 2000);
+        }
+        
+        // Start background effect
+        createBackgroundEffect();
+    </script>
+</body>
+</html>
