@@ -16,6 +16,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 
 const SKILLS_DIR = path.join(process.cwd(), 'server', 'skills');
+const DEFAULT_SKILLS = new Set(['claude-guidelines']);
 
 /**
  * Parse YAML frontmatter from markdown content
@@ -125,6 +126,7 @@ class Skill {
     this.description = metadata.description || '';
     this.emoji = metadata.openclaw?.emoji || metadata.emoji || '🔧';
     this.enabled = true;
+    this.isDefault = DEFAULT_SKILLS.has(this.id) || DEFAULT_SKILLS.has(this.name);
     this.documentation = documentation;
 
     // Requirements
@@ -277,7 +279,13 @@ export class SkillManager {
    * Get all enabled and valid skills
    */
   getActiveSkills() {
-    return Array.from(this.skills.values()).filter(s => s.enabled && s.isValid);
+    const active = Array.from(this.skills.values()).filter(s => s.enabled && s.isValid);
+    active.sort((a, b) => {
+      if (a.isDefault && !b.isDefault) return -1;
+      if (!a.isDefault && b.isDefault) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return active;
   }
 
   /**
@@ -305,6 +313,7 @@ export class SkillManager {
   disableSkill(id) {
     const skill = this.skills.get(id);
     if (skill) {
+      if (skill.isDefault) return false;
       skill.enabled = false;
       return true;
     }

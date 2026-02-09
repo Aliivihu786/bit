@@ -7,7 +7,7 @@ import {
   Code, FolderOpen,
 } from 'lucide-react';
 
-export function ChatPanel({ messages, steps, status, terminalCommands, onSend, onTerminalClick }) {
+export function ChatPanel({ messages, steps, status, onSend }) {
   const [input, setInput] = useState('');
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
@@ -158,7 +158,7 @@ export function ChatPanel({ messages, steps, status, terminalCommands, onSend, o
       </div>
 
       {/* Live execution status - above input */}
-      <ExecutionStatus steps={steps} status={status} terminalCommands={terminalCommands} onTerminalClick={onTerminalClick} />
+      <ExecutionStatus steps={steps} status={status} />
 
       <div className="chat-input-bar">
         <div className="welcome-input-box">

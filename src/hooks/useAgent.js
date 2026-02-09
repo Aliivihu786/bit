@@ -53,7 +53,6 @@ export function useAgent() {
             setTaskId(event.taskId);
             break;
           case 'status':
-            setSteps(prev => [...prev, { type: 'status', message: event.message }]);
             break;
           case 'thinking':
             setSteps(prev => [...prev, { type: 'thinking', iteration: event.iteration }]);
@@ -63,18 +62,6 @@ export function useAgent() {
             break;
           case 'tool_call':
             setSteps(prev => [...prev, { type: 'tool_call', tool: event.tool, args: event.args, iteration: event.iteration }]);
-            // Show loading state in browser when agent starts browsing
-            if (event.tool === 'web_browser' || event.tool === 'web_search' || event.tool === 'browser_automation') {
-              const loadingState = {
-                type: event.tool === 'web_search' ? 'searching' :
-                      event.tool === 'browser_automation' ? 'automating' : 'loading',
-                url: event.args?.url || '',
-                query: event.args?.query || '',
-                action: event.args?.action || '',
-              };
-              setBrowserState(loadingState);
-              browserCallbackRef.current?.(loadingState);
-            }
             // Track code executor commands for terminal
             if (event.tool === 'code_executor' && event.args) {
               try {
@@ -167,44 +154,51 @@ export function useAgent() {
                 // ignore parse errors
               }
             }
+            // Handle project scaffold preview
+            if (event.success && event.tool === 'project_scaffold' && event.result) {
+              try {
+                const result = JSON.parse(event.result);
+                // Refresh file browser after scaffolding
+                setFileVersion(v => v + 1);
+                if (result.previewUrl) {
+                  setBrowserState({
+                    type: 'canvas',
+                    url: result.previewUrl,
+                    title: result.project?.name || result.framework || 'Preview',
+                    timestamp: Date.now(),
+                  });
+                }
+              } catch (e) {
+                // ignore parse errors
+              }
+            }
             break;
           case 'browser_event': {
-            let state;
-            if (event.tool === 'browser_automation') {
-              state = {
-                type: 'automation',
-                action: event.action,
-                url: event.url,
-                title: event.title,
-                screenshot: event.screenshot,
-                message: event.message,
-                timestamp: Date.now(),
-              };
-            } else {
-              state = {
-                type: event.tool === 'web_search' ? 'search_results' : 'page',
-                action: event.action || 'goto',
-                url: event.url,
-                title: event.title,
-                results: event.results,
-                query: event.query,
-                section: event.section || 1,
-                totalSections: event.totalSections || 1,
-                timestamp: Date.now(),
-              };
+            // Do not surface web browsing/search events in the UI
+            if (event.tool === 'web_search' || event.tool === 'web_browser') {
+              break;
             }
+            const state = {
+              type: event.tool === 'web_search' ? 'search_results' : 'page',
+              action: event.action || 'goto',
+              url: event.url,
+              title: event.title,
+              results: event.results,
+              query: event.query,
+              section: event.section || 1,
+              totalSections: event.totalSections || 1,
+              timestamp: Date.now(),
+            };
             setBrowserState(state);
             browserCallbackRef.current?.(state);
             break;
           }
           case 'complete':
             setMessages(prev => [...prev, { role: 'assistant', content: event.content }]);
-            setSteps([]);
             setStatus('completed');
             break;
           case 'error':
             if (!event.recoverable) {
-              setSteps([]);
               setStatus('error');
               setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${event.message}` }]);
             }
@@ -233,9 +227,7 @@ export function useAgent() {
       });
       // Safety: if stream ends and status is still 'running', mark as completed
       setStatus(prev => prev === 'running' ? 'completed' : prev);
-      setSteps([]);
     } catch (err) {
-      setSteps([]);
       setStatus('error');
       setMessages(prev => [...prev, { role: 'assistant', content: `Connection error: ${err.message}` }]);
     }

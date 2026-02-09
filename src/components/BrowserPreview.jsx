@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, RefreshCw, ArrowLeft, ArrowRight, ExternalLink, Search, ChevronUp, ChevronDown, Monitor } from 'lucide-react';
+import { Globe, RefreshCw, ArrowLeft, ArrowRight, ExternalLink, Search, ChevronUp, ChevronDown } from 'lucide-react';
 
 function proxyUrl(url) {
   return `/api/browser/proxy?url=${encodeURIComponent(url)}`;
@@ -103,36 +103,6 @@ export function BrowserPreview({ taskId, browserState }) {
         query: browserState.query,
         results: browserState.results || [],
       });
-    } else if (browserState.type === 'automating') {
-      setLoading(true);
-      setScrollInfo(null);
-      if (browserState.url) {
-        setUrl(browserState.url);
-        setInputUrl(browserState.url);
-      }
-      setContent(prev => prev?.type === 'automation' ? prev : { type: 'automation' });
-    } else if (browserState.type === 'automation') {
-      setLoading(false);
-      setScrollInfo(null);
-      if (browserState.url) {
-        setUrl(browserState.url);
-        setInputUrl(browserState.url);
-      }
-      setContent({
-        type: 'automation',
-        screenshot: browserState.screenshot,
-        message: browserState.message,
-        action: browserState.action,
-        url: browserState.url,
-        title: browserState.title,
-      });
-      // Also load the URL in iframe for live view
-      if (browserState.url && iframeRef.current) {
-        const newSrc = proxyUrl(browserState.url);
-        if (iframeRef.current.src !== newSrc) {
-          iframeRef.current.src = newSrc;
-        }
-      }
     }
     // Note: canvas type is handled by CanvasPreview component
   }, [browserState, scrollIframeTo, historyIndex]);
@@ -199,8 +169,7 @@ export function BrowserPreview({ taskId, browserState }) {
     navigate(resultUrl);
   };
 
-  const showIframe = content?.type === 'page' || (content?.type === 'automation' && !content.screenshot);
-  const showScreenshot = content?.type === 'automation' && content.screenshot && !loading;
+  const showIframe = content?.type === 'page';
   const showSearch = content?.type === 'search' && !loading;
 
   return (
@@ -217,7 +186,6 @@ export function BrowserPreview({ taskId, browserState }) {
         </button>
         <form className="browser-url-bar" onSubmit={handleSubmit}>
           {content?.type === 'search' ? <Search size={12} className="url-icon" /> :
-           content?.type === 'automation' ? <Monitor size={12} className="url-icon" /> :
            <Globe size={12} className="url-icon" />}
           <input
             type="text"
@@ -260,25 +228,8 @@ export function BrowserPreview({ taskId, browserState }) {
           title="Browser preview"
           onLoad={handleIframeLoad}
           onError={() => setLoading(false)}
-          style={{ display: showIframe && !showScreenshot ? 'block' : 'none' }}
+          style={{ display: showIframe ? 'block' : 'none' }}
         />
-
-        {/* Browser automation screenshot */}
-        {showScreenshot && (
-          <div className="browser-automation-view">
-            <img
-              src={`data:image/png;base64,${content.screenshot}`}
-              alt="Browser screenshot"
-              className="browser-screenshot"
-            />
-            {content.message && (
-              <div className="automation-action-bar">
-                <Monitor size={14} />
-                <span>{content.message}</span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Loading overlay */}
         {loading && (
@@ -286,8 +237,6 @@ export function BrowserPreview({ taskId, browserState }) {
             <div className="loading-spinner" />
             <p>{browserState?.type === 'searching'
               ? `Searching: ${browserState?.query || ''}...`
-              : browserState?.type === 'automating'
-              ? `Browser: ${browserState?.action || 'working'}...`
               : `Loading...`}
             </p>
           </div>

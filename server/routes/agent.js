@@ -3,7 +3,7 @@ import { AgentOrchestrator } from '../agent/orchestrator.js';
 import { createToolRegistry } from '../agent/toolRegistry.js';
 import { taskStore } from '../agent/taskStore.js';
 import { sandboxManager } from '../agent/sandboxManager.js';
-import { browserSessionManager } from '../agent/browserSessionManager.js';
+import { devServerManager } from '../agent/devServerManager.js';
 
 export const agentRoutes = Router();
 
@@ -39,11 +39,10 @@ agentRoutes.post('/run', async (req, res) => {
 
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Sandbox ready. Starting agent...' })}\n\n`);
 
-    // Create getter functions that tools will use
+    // Create getter function that tools will use
     const sandboxGetter = () => Promise.resolve(sandbox);
-    const browserSessionGetter = () => browserSessionManager.getOrCreate(task.id);
 
-    const registry = createToolRegistry(sandboxGetter, browserSessionGetter);
+    const registry = createToolRegistry(sandboxGetter);
     const orchestrator = new AgentOrchestrator(registry, taskStore);
 
     await orchestrator.run(task.id, message, (event) => {
@@ -83,8 +82,11 @@ agentRoutes.get('/task/:id', (req, res) => {
 // DELETE /api/agent/task/:id — kill sandbox and clean up task
 agentRoutes.delete('/task/:id', async (req, res) => {
   try {
+    const sandbox = sandboxManager.get(req.params.id);
+    if (sandbox) {
+      await devServerManager.killAllForTask(req.params.id, sandbox);
+    }
     await sandboxManager.kill(req.params.id);
-    await browserSessionManager.kill(req.params.id);
     res.json({ deleted: true });
   } catch (err) {
     res.status(404).json({ error: err.message });

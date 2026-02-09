@@ -315,8 +315,7 @@ await test('All tools registered correctly', async () => {
 
   // Create registry with mock getters
   const registry = createToolRegistry(
-    () => Promise.resolve({}), // mock sandbox
-    () => Promise.resolve({})  // mock browser session
+    () => Promise.resolve({}) // mock sandbox
   );
 
   const tools = registry.getToolDefinitions();
@@ -327,9 +326,9 @@ await test('All tools registered correctly', async () => {
     'web_browser',
     'code_executor',
     'file_manager',
-    'browser_automation',
     'memory',
     'canvas',
+    'project_scaffold',
   ];
 
   for (const name of expectedTools) {

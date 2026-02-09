@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChatPanel } from './ChatPanel.jsx';
-import { BrowserPreview } from './BrowserPreview.jsx';
 import { CanvasPreview } from './CanvasPreview.jsx';
 import { FileBrowser } from './FileBrowser.jsx';
 import { CodeEditor } from './CodeEditor.jsx';
 import { Terminal } from './Terminal.jsx';
 import { useAgent } from '../hooks/useAgent.js';
 import {
-  Bot, Globe, Code, SquarePen, Search, BookOpen,
-  Monitor, HelpCircle, Settings, Bell, PanelLeftClose, PanelLeftOpen,
+  Bot, Eye, Code, SquarePen, Search, BookOpen,
+  HelpCircle, Settings, Bell, PanelLeftClose, PanelLeftOpen,
   MessageSquare, Trash2, ChevronsLeft, ChevronsRight, Terminal as TerminalIcon,
 } from 'lucide-react';
 
@@ -122,13 +121,15 @@ export function Layout() {
   // Combine messages with system messages for display
   const allMessages = [...messages, ...systemMessages];
 
-  // Auto-switch to browser tab when agent starts browsing
+  // Auto-switch to browser tab when agent creates a canvas (app preview)
   useEffect(() => {
     if (!browserState) return;
     const ts = browserState.timestamp || browserState.type;
     if (ts !== prevBrowserTimestamp.current) {
       prevBrowserTimestamp.current = ts;
-      setActiveTab('browser');
+      if (browserState.type === 'canvas') {
+        setActiveTab('browser');
+      }
     }
   }, [browserState]);
 
@@ -155,16 +156,6 @@ export function Layout() {
     // Always show in editor for code viewing/editing
     setActiveTab('editor');
   }, [lastFileOperation]);
-
-  // Auto-switch to Canvas tab when agent creates HTML via canvas
-  useEffect(() => {
-    if (!browserState) return;
-
-    // Canvas HTML preview - show in canvas tab
-    if (browserState.type === 'canvas') {
-      setActiveTab('canvas');
-    }
-  }, [browserState]);
 
   const handleFileSelect = (file) => {
     setSelectedFile(file);
@@ -262,9 +253,7 @@ export function Layout() {
             messages={allMessages}
             steps={steps}
             status={status}
-            terminalCommands={terminalCommands}
             onSend={handleSend}
-            onTerminalClick={() => setActiveTab('terminal')}
           />
         </main>
       </div>
@@ -274,18 +263,11 @@ export function Layout() {
         <aside className="detail-panel">
           <div className="tab-bar">
             <button
-              className={`${activeTab === 'browser' ? 'active' : ''} ${browserState && (browserState.type === 'loading' || browserState.type === 'searching') ? 'tab-pulse' : ''}`}
+              className={`${activeTab === 'browser' ? 'active' : ''} ${browserState && browserState.type === 'canvas' ? 'tab-pulse' : ''}`}
               onClick={() => setActiveTab('browser')}
             >
-              <Globe size={16} />
-              Browser
-            </button>
-            <button
-              className={`${activeTab === 'canvas' ? 'active' : ''} ${browserState && browserState.type === 'canvas' ? 'tab-pulse' : ''}`}
-              onClick={() => setActiveTab('canvas')}
-            >
-              <Monitor size={16} />
-              Canvas
+              <Eye size={16} />
+              Preview
             </button>
             <button
               className={activeTab === 'editor' ? 'active' : ''}
@@ -305,9 +287,6 @@ export function Layout() {
 
           <div className="tab-content">
             {activeTab === 'browser' && (
-              <BrowserPreview taskId={taskId} browserState={browserState} />
-            )}
-            {activeTab === 'canvas' && (
               <CanvasPreview browserState={browserState} />
             )}
             {activeTab === 'editor' && (

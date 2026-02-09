@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import path from 'path';
 import { taskStore } from '../agent/taskStore.js';
 import { sandboxManager } from '../agent/sandboxManager.js';
 import { getCanvasServer } from '../canvas/canvasServer.js';
@@ -29,6 +30,22 @@ const CANVAS_HOTRELOAD_SCRIPT = `
 })();
 </script>
 `;
+
+const STATIC_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+};
 
 async function getFilesRecursive(sandbox, dir) {
   const files = [];
@@ -168,6 +185,49 @@ workspaceRoutes.get('/:taskId/preview/:filename', async (req, res) => {
     }
 
     res.type('html').send(content);
+  } catch (err) {
+    res.status(404).send(`File not found: ${err.message}`);
+  }
+});
+
+// GET /api/workspace/:taskId/preview-app/* — serve static files from workspace
+workspaceRoutes.get('/:taskId/preview-app/*', async (req, res) => {
+  try {
+    const task = taskStore.get(req.params.taskId);
+    const sandbox = sandboxManager.get(task.id);
+
+    if (!sandbox) {
+      return res.status(404).send('Sandbox not active');
+    }
+
+    const relPath = req.params[0];
+    if (!relPath) {
+      return res.status(400).send('Path required');
+    }
+
+    if (relPath.includes('..')) {
+      return res.status(403).send('Path traversal blocked');
+    }
+
+    const resolvePath = (p) => `${WORKSPACE_ROOT}/${p}`.replace(/\/+/g, '/');
+
+    let fullPath = resolvePath(relPath);
+    let content;
+    try {
+      content = await sandbox.files.read(fullPath);
+    } catch {
+      // If a directory is requested, try index.html
+      if (!path.extname(fullPath)) {
+        fullPath = resolvePath(relPath.replace(/\/$/, '') + '/index.html');
+        content = await sandbox.files.read(fullPath);
+      } else {
+        return res.status(404).send('File not found');
+      }
+    }
+
+    const ext = path.extname(fullPath).toLowerCase();
+    res.setHeader('Content-Type', STATIC_MIME[ext] || 'application/octet-stream');
+    res.send(content);
   } catch (err) {
     res.status(404).send(`File not found: ${err.message}`);
   }

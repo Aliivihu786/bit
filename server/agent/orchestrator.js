@@ -184,40 +184,22 @@ export class AgentOrchestrator {
               result = await this.toolRegistry.executeTool(toolName, toolArgs, { taskId });
 
               // For web tools: emit browser event for real-time preview
-              if (toolName === 'web_browser' || toolName === 'web_search' || toolName === 'browser_automation') {
+              if (toolName === 'web_browser' || toolName === 'web_search') {
                 try {
                   const parsed = JSON.parse(result);
+                  llmResult = result;
 
-                  if (toolName === 'browser_automation') {
-                    // Strip screenshot base64 from LLM context (too large)
-                    const screenshotBase64 = parsed._screenshotBase64;
-                    delete parsed._screenshotBase64;
-                    llmResult = JSON.stringify(parsed);
-
-                    onEvent({
-                      type: 'browser_event',
-                      tool: 'browser_automation',
-                      action: parsed.action || toolArgs.action,
-                      url: parsed.url || '',
-                      title: parsed.title || '',
-                      screenshot: screenshotBase64 || null,
-                      message: parsed.message || '',
-                    });
-                  } else {
-                    llmResult = result;
-
-                    onEvent({
-                      type: 'browser_event',
-                      tool: toolName,
-                      action: toolArgs.action || 'goto',
-                      url: parsed.url || toolArgs.url || '',
-                      title: parsed.title || '',
-                      results: parsed.results || [],
-                      query: parsed.query || toolArgs.query || '',
-                      section: parsed.section || 1,
-                      totalSections: parsed.total_sections || 1,
-                    });
-                  }
+                  onEvent({
+                    type: 'browser_event',
+                    tool: toolName,
+                    action: toolArgs.action || 'goto',
+                    url: parsed.url || toolArgs.url || '',
+                    title: parsed.title || '',
+                    results: parsed.results || [],
+                    query: parsed.query || toolArgs.query || '',
+                    section: parsed.section || 1,
+                    totalSections: parsed.total_sections || 1,
+                  });
                 } catch {
                   llmResult = result;
                 }

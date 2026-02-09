@@ -105,6 +105,20 @@ The code_executor tool can run code in multiple languages. **Always prefer bash 
 
 **ALWAYS use bash for file operations and package installation!**`;
 
+const PROJECT_SCAFFOLD_PROMPT = `
+
+## Project Scaffold Tool - Full Stack Apps
+You have a **project_scaffold** tool to generate full-stack or single-stack web projects inside the sandbox workspace.
+
+- Use action "list" to see supported frameworks
+- Use action "create" to scaffold a project
+- Projects should be created under /home/user/workspace
+- For unsupported frameworks, use framework "custom" and provide a scaffold command
+- If a framework supports both JS and TS, ask the user which language to use
+- Default package manager is npm unless the user requests a different one
+- For Vite/Next/Nuxt scaffolds, the tool auto-starts a live dev server and returns a preview URL
+`;
+
 // Cache the full prompt with skills
 let cachedPrompt = null;
 let skillsLoaded = false;
@@ -120,7 +134,7 @@ export async function getSystemPrompt() {
   try {
     const skillManager = await getSkillManager();
     const skillsPrompt = skillManager.getSkillsPrompt();
-    cachedPrompt = BASE_SYSTEM_PROMPT + skillsPrompt;
+    cachedPrompt = BASE_SYSTEM_PROMPT + PROJECT_SCAFFOLD_PROMPT + skillsPrompt;
     skillsLoaded = true;
     return cachedPrompt;
   } catch (err) {

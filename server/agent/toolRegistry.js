@@ -4,6 +4,7 @@ import { CodeExecutorTool } from '../tools/codeExecutor.js';
 import { FileManagerTool } from '../tools/fileManager.js';
 import { MemoryTool } from '../tools/memoryTool.js';
 import { CanvasTool } from '../tools/canvasTool.js';
+import { ProjectScaffoldTool } from '../tools/projectScaffold.js';
 
 class ToolRegistry {
   constructor() {
@@ -25,7 +26,7 @@ class ToolRegistry {
   }
 }
 
-export function createToolRegistry(sandboxGetter, browserSessionGetter) {
+export function createToolRegistry(sandboxGetter) {
   const registry = new ToolRegistry();
   registry.register(new WebSearchTool());
   registry.register(new WebBrowserTool()); // Read-only: goto, get_text, get_links
@@ -33,5 +34,6 @@ export function createToolRegistry(sandboxGetter, browserSessionGetter) {
   registry.register(new FileManagerTool(sandboxGetter));
   registry.register(new MemoryTool());
   registry.register(new CanvasTool(sandboxGetter)); // Also writes to workspace
+  registry.register(new ProjectScaffoldTool(sandboxGetter));
   return registry;
 }

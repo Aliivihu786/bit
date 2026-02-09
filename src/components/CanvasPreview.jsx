@@ -7,6 +7,12 @@ export function CanvasPreview({ browserState }) {
   const [loading, setLoading] = useState(false);
   const iframeRef = useRef(null);
 
+  const withTimestamp = (inputUrl, ts) => {
+    if (!inputUrl) return inputUrl;
+    const separator = inputUrl.includes('?') ? '&' : '?';
+    return `${inputUrl}${separator}t=${ts}`;
+  };
+
   // React to canvas events
   useEffect(() => {
     if (!browserState || browserState.type !== 'canvas') return;
@@ -18,7 +24,7 @@ export function CanvasPreview({ browserState }) {
     console.log('[CanvasPreview] Loading:', canvasUrl, 'timestamp:', timestamp);
 
     // Add timestamp to URL to force iframe reload on updates
-    const urlWithTimestamp = `${canvasUrl}?t=${timestamp}`;
+    const urlWithTimestamp = withTimestamp(canvasUrl, timestamp);
 
     setUrl(urlWithTimestamp);
     setTitle(canvasTitle);
@@ -46,7 +52,7 @@ export function CanvasPreview({ browserState }) {
   const handleRefresh = () => {
     if (iframeRef.current && url) {
       setLoading(true);
-      iframeRef.current.src = url + '?t=' + Date.now(); // Cache bust
+      iframeRef.current.src = withTimestamp(url, Date.now()); // Cache bust
     }
   };
 
