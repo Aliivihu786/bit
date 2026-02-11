@@ -65,9 +65,9 @@ export function CanvasPreview({ browserState }) {
   if (!url) {
     return (
       <div className="canvas-preview empty">
-        <Monitor size={48} className="empty-icon" />
-        <p className="empty-title">No Canvas Preview</p>
-        <p className="empty-hint">Agent-created HTML will appear here</p>
+        <div className="preview-mark">b</div>
+        <p className="empty-title">Your preview will appear here</p>
+        <p className="empty-hint">Generated pages show up instantly</p>
       </div>
     );
   }

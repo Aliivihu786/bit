@@ -62,3 +62,58 @@ export async function saveWorkspaceFile(taskId, path, content) {
   }
   return res.json();
 }
+
+export async function listSubagents() {
+  const res = await fetch('/api/agent/subagents');
+  if (!res.ok) {
+    throw new Error(`Failed to load subagents: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createSubagent(payload) {
+  const res = await fetch('/api/agent/subagents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to create subagent: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function generateSubagentSpec(payload) {
+  const res = await fetch('/api/agent/subagents/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to generate subagent spec: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function runSubagentTask(payload) {
+  const res = await fetch('/api/agent/subagents/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to run subagent: ${res.status}`);
+  }
+  return res;
+}
+
+export async function listAgentTools() {
+  const res = await fetch('/api/agent/tools');
+  if (!res.ok) {
+    throw new Error(`Failed to load tools: ${res.status}`);
+  }
+  return res.json();
+}

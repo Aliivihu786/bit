@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { runAgent, parseSSEStream } from '../api/client.js';
+import { runAgent, parseSSEStream, runSubagentTask } from '../api/client.js';
 
 function loadHistory() {
   try {
@@ -23,10 +23,24 @@ export function useAgent() {
   const [contextUsage, setContextUsage] = useState({ usagePercent: 0, remainingTokens: 0 });
   const [lastFileOperation, setLastFileOperation] = useState(null);
   const [terminalCommands, setTerminalCommands] = useState([]);
+  const [checkpoints, setCheckpoints] = useState([]);
+  const [todoList, setTodoList] = useState([]);
   const browserCallbackRef = useRef(null);
   const fileCallbackRef = useRef(null);
   const pendingCommandRef = useRef(null);
   const currentRunCommandsRef = useRef([]);
+  const taskIdRef = useRef(null);
+  const pendingSubagentRef = useRef([]);
+  const pendingSubagentAfterMainRef = useRef([]);
+  const statusRef = useRef(status);
+
+  useEffect(() => {
+    taskIdRef.current = taskId;
+  }, [taskId]);
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   // Allow Layout to register a callback for browser events
   const onBrowserEvent = useCallback((callback) => {
@@ -49,13 +63,23 @@ export function useAgent() {
 
       await parseSSEStream(response, (event) => {
         switch (event.type) {
-          case 'task_created':
+          case 'task_created': {
             setTaskId(event.taskId);
+            taskIdRef.current = event.taskId;
+            if (pendingSubagentRef.current.length > 0) {
+              const pending = [...pendingSubagentRef.current];
+              pendingSubagentRef.current = [];
+              pending.forEach(item => runSubagent(item));
+            }
             break;
+          }
           case 'status':
             break;
           case 'thinking':
             setSteps(prev => [...prev, { type: 'thinking', iteration: event.iteration }]);
+            break;
+          case 'model_thinking':
+            setSteps(prev => [...prev, { type: 'model_thinking', content: event.content, iteration: event.iteration }]);
             break;
           case 'reasoning':
             setSteps(prev => [...prev, { type: 'reasoning', content: event.content, iteration: event.iteration }]);
@@ -196,6 +220,11 @@ export function useAgent() {
           case 'complete':
             setMessages(prev => [...prev, { role: 'assistant', content: event.content }]);
             setStatus('completed');
+            if (pendingSubagentAfterMainRef.current.length > 0) {
+              const queued = [...pendingSubagentAfterMainRef.current];
+              pendingSubagentAfterMainRef.current = [];
+              queued.forEach(item => runSubagent({ ...item, deferUntilComplete: false }));
+            }
             break;
           case 'error':
             if (!event.recoverable) {
@@ -223,6 +252,54 @@ export function useAgent() {
               remainingTokens: event.remainingTokens,
             });
             break;
+          case 'subagent_start':
+            setSteps(prev => [...prev, {
+              type: 'subagent_start',
+              subagent: event.subagent,
+              description: event.description,
+            }]);
+            break;
+          case 'subagent_done':
+            setSteps(prev => [...prev, {
+              type: 'subagent_done',
+              subagent: event.subagent,
+              output: event.output,
+            }]);
+            break;
+          case 'subagent_event':
+            setSteps(prev => [...prev, {
+              type: 'subagent_event',
+              subagent: event.subagent,
+              event: event.event,
+            }]);
+            break;
+          case 'subagent_catalog':
+            setSteps(prev => [...prev, {
+              type: 'subagent_catalog',
+              iteration: event.iteration,
+              subagents: Array.isArray(event.subagents) ? event.subagents : [],
+            }]);
+            break;
+          case 'checkpoint': {
+            if (typeof event.id === 'number') {
+              setCheckpoints(prev => [...prev, {
+                id: event.id,
+                iteration: event.iteration || null,
+                timestamp: Date.now(),
+              }]);
+            }
+            break;
+          }
+          case 'think': {
+            setSteps(prev => [...prev, { type: 'think', content: event.content }]);
+            break;
+          }
+          case 'todo_list': {
+            const items = Array.isArray(event.items) ? event.items : [];
+            setTodoList(items);
+            setSteps(prev => [...prev, { type: 'todo_list', items }]);
+            break;
+          }
         }
       });
       // Safety: if stream ends and status is still 'running', mark as completed
@@ -232,6 +309,129 @@ export function useAgent() {
       setMessages(prev => [...prev, { role: 'assistant', content: `Connection error: ${err.message}` }]);
     }
   }, [taskId]);
+
+  const runSubagent = useCallback(async ({ subagentName, description, prompt, deferUntilComplete = false }) => {
+    const activeTaskId = taskIdRef.current;
+    if (!activeTaskId) {
+      pendingSubagentRef.current.push({ subagentName, description, prompt, deferUntilComplete });
+      setSteps(prev => [...prev, {
+        type: 'status',
+        message: `Queued subagent ${subagentName} until chat starts.`,
+      }]);
+      return;
+    }
+    if (!subagentName || !prompt) {
+      throw new Error('Subagent name and prompt are required.');
+    }
+
+    const priorStatus = statusRef.current;
+    if (deferUntilComplete && priorStatus === 'running') {
+      pendingSubagentAfterMainRef.current.push({ subagentName, description, prompt });
+      setSteps(prev => [...prev, {
+        type: 'status',
+        message: `Subagent ${subagentName} will run after the main agent completes.`,
+      }]);
+      return;
+    }
+    if (priorStatus !== 'running') setStatus('running');
+    setSteps(prev => [...prev, {
+      type: 'status',
+      message: `Running subagent: ${subagentName}`,
+    }]);
+
+    const isNetworkError = (err) => (
+      err instanceof TypeError || /failed to fetch|network error|load failed/i.test(err.message || '')
+    );
+
+    const runOnce = async (markEvent) => {
+      const response = await runSubagentTask({
+        taskId: activeTaskId,
+        subagent_name: subagentName,
+        description: description || '',
+        prompt,
+      });
+
+      await parseSSEStream(response, (event) => {
+        markEvent();
+        switch (event.type) {
+          case 'subagent_start':
+            setSteps(prev => [...prev, {
+              type: 'subagent_start',
+              subagent: event.subagent,
+              description: event.description,
+            }]);
+            break;
+          case 'subagent_done':
+            setSteps(prev => [...prev, {
+              type: 'subagent_done',
+              subagent: event.subagent,
+              output: event.output,
+            }]);
+            break;
+          case 'subagent_event':
+            setSteps(prev => [...prev, {
+              type: 'subagent_event',
+              subagent: event.subagent,
+              event: event.event,
+            }]);
+            break;
+          case 'subagent_complete':
+            setSteps(prev => [...prev, {
+              type: 'subagent_done',
+              subagent: event.subagent,
+              output: event.output || '',
+            }]);
+            if (priorStatus !== 'running') setStatus('completed');
+            break;
+          case 'subagent_error':
+            setSteps(prev => [...prev, {
+              type: 'status',
+              message: `Subagent ${event.subagent} error: ${event.message}`,
+            }]);
+            if (priorStatus !== 'running') setStatus('error');
+            break;
+          default:
+            break;
+        }
+      });
+
+      return true;
+    };
+
+    const maxAttempts = 2;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let sawEvent = false;
+      const markEvent = () => {
+        sawEvent = true;
+      };
+      try {
+        await runOnce(markEvent);
+        if (priorStatus !== 'running') {
+          setStatus(prev => prev === 'running' ? 'completed' : prev);
+        }
+        return;
+      } catch (err) {
+        const network = isNetworkError(err);
+        const canRetry = network && !sawEvent && attempt < maxAttempts;
+        if (canRetry) {
+          setSteps(prev => [...prev, {
+            type: 'status',
+            message: `Subagent ${subagentName} network error. Retrying...`,
+          }]);
+          await new Promise(r => setTimeout(r, 700 * attempt));
+          continue;
+        }
+        if (priorStatus !== 'running') setStatus('error');
+        setSteps(prev => [...prev, {
+          type: 'status',
+          message: network
+            ? `Subagent ${subagentName} network error. Please retry.`
+            : `Subagent error: ${err.message}`,
+        }]);
+        return;
+      }
+    }
+  }, []);
 
   // Save current chat to history when it completes
   useEffect(() => {
@@ -265,6 +465,7 @@ export function useAgent() {
     setActiveChatId(null);
     setContextUsage({ usagePercent: 0, remainingTokens: 0 });
     setTerminalCommands([]);
+    setTodoList([]);
   }, []);
 
   const loadChat = useCallback((chat) => {
@@ -286,5 +487,26 @@ export function useAgent() {
     if (activeChatId === chatId) resetChat();
   }, [activeChatId, resetChat]);
 
-  return { messages, steps, status, taskId, browserState, fileVersion, chatHistory, activeChatId, contextUsage, lastFileOperation, terminalCommands, sendMessage, resetChat, loadChat, deleteChat, onBrowserEvent, onFileOperation };
+  return {
+    messages,
+    steps,
+    status,
+    taskId,
+    browserState,
+    fileVersion,
+    chatHistory,
+    activeChatId,
+    contextUsage,
+    lastFileOperation,
+    terminalCommands,
+    checkpoints,
+    todoList,
+    sendMessage,
+    runSubagent,
+    resetChat,
+    loadChat,
+    deleteChat,
+    onBrowserEvent,
+    onFileOperation,
+  };
 }

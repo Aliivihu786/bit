@@ -1,4 +1,7 @@
 import { getSkillManager } from './skillManager.js';
+import { subagentManager } from './subagentManager.js';
+import fs from 'fs';
+import path from 'path';
 
 const BASE_SYSTEM_PROMPT = `You are Bit Agent, an autonomous AI assistant capable of completing complex tasks step-by-step. You have access to tools for web browsing, web searching, code execution, and file management.
 
@@ -16,7 +19,22 @@ const BASE_SYSTEM_PROMPT = `You are Bit Agent, an autonomous AI assistant capabl
 - When researching, use web_search first, then web_browser to read the most relevant results.
 - Keep your final response concise and focused on what was accomplished.
 - Never fabricate information -- always verify via tools.
+- **CRITICAL**: If you created a todo list, you MUST complete ALL items (mark them "done") before providing your final response. You cannot finish with incomplete todos.
 - When you are done with the task, provide a clear summary of what was accomplished.
+
+## Think Tool:
+You can use the **think** tool to log internal reasoning or notes without responding to the user.
+Use it to keep your own chain-of-thought out of the user-facing response while still recording key reasoning.
+- **Before finishing, ALWAYS verify your work has no errors.** Run the code you wrote, check for syntax errors, test that files were created correctly, and confirm the output is correct. If you find errors, fix them before completing. Never mark a task as done if there are unresolved errors.
+- Do NOT scaffold or create a full project unless the user explicitly asks for it. If the user asks you to write a function, fix a bug, create a single file, or do a small task, just do that directly using file_manager and code_executor. Only use project_scaffold when the user clearly wants a new full project setup (e.g., "create a React app", "scaffold a Next.js project").
+
+## Subagents:
+You can delegate focused subtasks to specialized subagents using the **task** tool.
+- Subagents run in an **isolated context** — they cannot see your conversation history.
+- You MUST provide all necessary background, file paths, and context in the prompt.
+- Use subagents for specific subtasks (e.g., code review, targeted research, focused coding), not for every step.
+- Subagents return a summary when done — use their output to continue your work.
+- To create a new subagent on the fly, use the **create_subagent** tool.
 
 ## Web Browsing:
 You have a **web_browser** tool for reading web pages (articles, documentation, blogs, etc.).
@@ -69,6 +87,25 @@ You have PERSISTENT MEMORY that survives across conversations! Use it to remembe
 - Keep memories organized with clear titles (e.g., "User Preferences", "Project: MyApp", "API Keys")
 - Update memories when information changes (save will overwrite existing sections)
 
+## Todo List:
+Use the **set_todo_list** tool to track progress on multi-step tasks.
+- Each call replaces the FULL list — include ALL items with their current status.
+- Statuses: "pending", "in_progress", "done".
+- Use it when a task has multiple subtasks or milestones.
+- Update the list after completing each step to show progress.
+- **CRITICAL RULE**: Once you create a todo list, you CANNOT finish until ALL items are marked "done". If you try to provide a final response with incomplete todos, you will be forced to continue working. Always verify todos are complete before summarizing.
+- Do NOT use it for simple questions or single-step tasks — it wastes tokens.
+- Be flexible: start without it and add if the task becomes complex, or stop if the task proves simpler than expected.
+
+## D-Mail & Checkpoints:
+You may see synthetic user messages like: <system>CHECKPOINT 3</system>
+These are context checkpoints you can return to.
+
+Use the **dmail** tool to send a message to your past self and revert context to a checkpoint.
+- This rewinds ONLY the conversation context, not the filesystem or external state.
+- The message should summarize what you already did/learned so you don't redo work.
+- Do NOT mention D-Mail to the user; write only for your past self.
+
 ## Sandbox Environment:
 You are operating inside a secure cloud sandbox (E2B). All file operations and code execution happen in this isolated environment.
 - Files are stored at /home/user/workspace/ — use relative paths with the file_manager tool.
@@ -110,6 +147,9 @@ const PROJECT_SCAFFOLD_PROMPT = `
 ## Project Scaffold Tool - Full Stack Apps
 You have a **project_scaffold** tool to generate full-stack or single-stack web projects inside the sandbox workspace.
 
+**IMPORTANT: Only use this tool when the user EXPLICITLY asks to create/scaffold a new project.**
+Do NOT use it for simple tasks like writing a single file, fixing code, answering questions, or small coding tasks. For those, use file_manager and code_executor directly.
+
 - Use action "list" to see supported frameworks
 - Use action "create" to scaffold a project
 - Projects should be created under /home/user/workspace
@@ -119,35 +159,61 @@ You have a **project_scaffold** tool to generate full-stack or single-stack web 
 - For Vite/Next/Nuxt scaffolds, the tool auto-starts a live dev server and returns a preview URL
 `;
 
-// Cache the full prompt with skills
-let cachedPrompt = null;
+function buildSubagentListPrompt() {
+  const list = subagentManager.list();
+  if (!list.length) return '';
+  const lines = list.map(s => `- **${s.name}**: ${s.description}`);
+  return `\n\n## Available Subagents:\nUse the **task** tool with one of these subagent names:\n${lines.join('\n')}\n`;
+}
+
+const GUIDELINES_PATH = path.resolve(process.cwd(), 'bit.md');
+
+function loadGuidelinesPrompt() {
+  try {
+    if (!fs.existsSync(GUIDELINES_PATH)) {
+      return '';
+    }
+    const content = fs.readFileSync(GUIDELINES_PATH, 'utf8').trim();
+    if (!content) {
+      return '';
+    }
+    return `\n\n# AI Coding Agent Guidelines\n${content}\n`;
+  } catch (err) {
+    console.error('[Prompts] Error loading bit.md:', err.message);
+    return '';
+  }
+}
+
+// Cache the base prompt (skills + guidelines), subagent list is added dynamically
+let cachedBasePrompt = null;
 let skillsLoaded = false;
 
 /**
- * Get the full system prompt including skills
+ * Get the full system prompt including skills and available subagents
  */
 export async function getSystemPrompt() {
-  if (cachedPrompt && skillsLoaded) {
-    return cachedPrompt;
+  if (!cachedBasePrompt || !skillsLoaded) {
+    try {
+      const skillManager = await getSkillManager();
+      const skillsPrompt = skillManager.getSkillsPrompt();
+      const guidelinesPrompt = loadGuidelinesPrompt();
+      cachedBasePrompt = BASE_SYSTEM_PROMPT + PROJECT_SCAFFOLD_PROMPT + guidelinesPrompt + skillsPrompt;
+      skillsLoaded = true;
+    } catch (err) {
+      console.error('[Prompts] Error loading skills:', err.message);
+      cachedBasePrompt = BASE_SYSTEM_PROMPT;
+    }
   }
 
-  try {
-    const skillManager = await getSkillManager();
-    const skillsPrompt = skillManager.getSkillsPrompt();
-    cachedPrompt = BASE_SYSTEM_PROMPT + PROJECT_SCAFFOLD_PROMPT + skillsPrompt;
-    skillsLoaded = true;
-    return cachedPrompt;
-  } catch (err) {
-    console.error('[Prompts] Error loading skills:', err.message);
-    return BASE_SYSTEM_PROMPT;
-  }
+  // Always append current subagent list (can change at runtime)
+  return cachedBasePrompt + buildSubagentListPrompt();
 }
 
 /**
  * Invalidate prompt cache (call when skills change)
  */
 export function invalidatePromptCache() {
-  cachedPrompt = null;
+  cachedBasePrompt = null;
   skillsLoaded = false;
 }
 

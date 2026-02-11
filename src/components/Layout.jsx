@@ -3,12 +3,12 @@ import { ChatPanel } from './ChatPanel.jsx';
 import { CanvasPreview } from './CanvasPreview.jsx';
 import { FileBrowser } from './FileBrowser.jsx';
 import { CodeEditor } from './CodeEditor.jsx';
-import { Terminal } from './Terminal.jsx';
 import { useAgent } from '../hooks/useAgent.js';
 import {
-  Bot, Eye, Code, SquarePen, Search, BookOpen,
-  HelpCircle, Settings, Bell, PanelLeftClose, PanelLeftOpen,
-  MessageSquare, Trash2, ChevronsLeft, ChevronsRight, Terminal as TerminalIcon,
+  Eye, Code, SquarePen, Search, BookOpen,
+  HelpCircle, Settings, PanelLeftOpen,
+  MessageSquare, Trash2, ChevronsLeft, ChevronsRight,
+  Github, Share2, UploadCloud, Lock,
 } from 'lucide-react';
 
 // Slash commands that are handled locally (not sent to agent)
@@ -22,7 +22,7 @@ const LOCAL_COMMANDS = {
 };
 
 export function Layout() {
-  const { messages, steps, status, taskId, browserState, fileVersion, chatHistory, activeChatId, lastFileOperation, terminalCommands, sendMessage, resetChat, loadChat, deleteChat, onFileOperation } = useAgent();
+  const { messages, steps, status, taskId, browserState, fileVersion, chatHistory, activeChatId, lastFileOperation, sendMessage, resetChat, loadChat, deleteChat, onFileOperation, checkpoints } = useAgent();
   const [activeTab, setActiveTab] = useState('browser');
   const [selectedFile, setSelectedFile] = useState(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
@@ -167,8 +167,8 @@ export function Layout() {
       <aside className={`sidebar ${sidebarOpen ? 'expanded' : ''}`}>
         <div className="sidebar-top-section">
           <div className="sidebar-logo">
-            <Bot size={24} />
-            {sidebarOpen && <span className="sidebar-brand">Bit Agent</span>}
+            <div className="brand-mark">b</div>
+            {sidebarOpen && <span className="sidebar-brand">bit</span>}
           </div>
           <div className="sidebar-nav-top">
             <button className="sidebar-icon active" onClick={resetChat} title="New task">
@@ -237,13 +237,16 @@ export function Layout() {
         {/* Top Bar */}
         <div className="top-bar">
           <div className="top-bar-left">
-            <span className="top-bar-title">Bit Agent</span>
+            <div className="top-bar-app">
+              <span className="top-bar-mark">b</span>
+              <span className="top-bar-title">General Communication</span>
+              <Lock size={14} className="top-bar-lock" />
+            </div>
           </div>
           <div className="top-bar-right">
-            <button className="top-bar-btn" title="Notifications">
-              <Bell size={18} />
+            <button className="top-bar-btn ghost" title="GitHub">
+              <Github size={16} />
             </button>
-            <div className="user-avatar">A</div>
           </div>
         </div>
 
@@ -253,6 +256,7 @@ export function Layout() {
             messages={allMessages}
             steps={steps}
             status={status}
+            checkpoints={checkpoints}
             onSend={handleSend}
           />
         </main>
@@ -262,6 +266,7 @@ export function Layout() {
       {showDetail && (
         <aside className="detail-panel">
           <div className="tab-bar">
+            <div className="tab-bar-left">
             <button
               className={`${activeTab === 'browser' ? 'active' : ''} ${browserState && browserState.type === 'canvas' ? 'tab-pulse' : ''}`}
               onClick={() => setActiveTab('browser')}
@@ -276,13 +281,18 @@ export function Layout() {
               <Code size={16} />
               Editor
             </button>
-            <button
-              className={`${activeTab === 'terminal' ? 'active' : ''} ${terminalCommands.length > 0 ? 'tab-pulse' : ''}`}
-              onClick={() => setActiveTab('terminal')}
-            >
-              <TerminalIcon size={16} />
-              Terminal
-            </button>
+            </div>
+            <div className="tab-bar-right">
+              <button className="top-bar-pill" title="Share">
+                <Share2 size={14} />
+                Share
+              </button>
+              <button className="top-bar-pill primary" title="Publish">
+                <UploadCloud size={14} />
+                Publish
+              </button>
+              <div className="user-avatar">A</div>
+            </div>
           </div>
 
           <div className="tab-content">
@@ -311,9 +321,6 @@ export function Layout() {
                 )}
                 <CodeEditor taskId={taskId} file={selectedFile} onFileSelect={handleFileSelect} fileVersion={fileVersion} />
               </div>
-            )}
-            {activeTab === 'terminal' && (
-              <Terminal commands={terminalCommands} />
             )}
           </div>
         </aside>

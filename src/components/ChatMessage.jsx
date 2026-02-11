@@ -2,7 +2,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { User, Bot, Terminal } from 'lucide-react';
+import { User, Bot } from 'lucide-react';
 
 export function ChatMessage({ message }) {
   const isUser = message.role === 'user';
@@ -16,7 +16,7 @@ export function ChatMessage({ message }) {
 
   const getAvatar = () => {
     if (isUser) return <User size={20} />;
-    if (isSystem) return <Terminal size={20} />;
+    if (isSystem) return <Bot size={20} />;
     return <Bot size={20} />;
   };
 

@@ -47,7 +47,7 @@ export class ContextWindowGuard {
 
     // State
     this.warningEmitted = false;
-    this.compactionTriggered = false;
+    this.compactionCount = 0;
   }
 
   /**
@@ -119,15 +119,15 @@ export class ContextWindowGuard {
       return status;
     }
 
-    // Compact threshold - summarize old messages
-    if (usagePercent >= THRESHOLDS.COMPACT && !this.compactionTriggered) {
+    // Compact threshold - summarize old messages (can trigger multiple times)
+    if (usagePercent >= THRESHOLDS.COMPACT) {
       status.action = 'compact';
       status.shouldCompact = true;
-      this.compactionTriggered = true;
+      this.compactionCount += 1;
       onEvent?.({
         type: 'context_warning',
         level: 'high',
-        message: `Context window high (${status.usagePercent}% used). Compacting conversation.`,
+        message: `Context window high (${status.usagePercent}% used). Compacting conversation (round ${this.compactionCount}).`,
         usagePercent: status.usagePercent,
         remainingTokens,
       });
@@ -218,7 +218,7 @@ export class ContextWindowGuard {
       usagePercent,
       remainingTokens: this.effectiveLimit - currentTokens,
       warningEmitted: this.warningEmitted,
-      compactionTriggered: this.compactionTriggered,
+      compactionCount: this.compactionCount,
     };
   }
 
@@ -231,7 +231,7 @@ export class ContextWindowGuard {
     this.lastTotalTokens = 0;
     this.estimatedTokens = 0;
     this.warningEmitted = false;
-    this.compactionTriggered = false;
+    this.compactionCount = 0;
   }
 }
 

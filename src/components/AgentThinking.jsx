@@ -1,4 +1,4 @@
-import { Terminal, FileText, Globe, Search, Brain, AlertTriangle, CheckCircle, XCircle, Package, Lightbulb, Info, Pencil } from 'lucide-react';
+import { Terminal, FileText, Globe, Search, Brain, AlertTriangle, CheckCircle, XCircle, Package, Lightbulb, Info, Pencil, Users, ListTodo, Circle, CircleDot } from 'lucide-react';
 import { useState } from 'react';
 
 const stepIcons = {
@@ -8,6 +8,8 @@ const stepIcons = {
   web_browser: Globe,
   project_scaffold: Package,
   canvas: Pencil,
+  task: Users,
+  set_todo_list: ListTodo,
 };
 
 function summarizeToolCall(step) {
@@ -36,6 +38,9 @@ function summarizeToolCall(step) {
       const action = args.action || 'browse';
       const target = args.url || '';
       return `${action} ${target}`.trim();
+    }
+    case 'task': {
+      return `Subagent ${args.subagent_name || ''}`.trim();
     }
     default:
       return step.tool || 'Task';
@@ -105,13 +110,68 @@ function truncateBlock(text, maxLines = 6, maxChars = 600) {
   return { text: `${out.join('\n')}${truncated ? '\n...' : ''}`, truncated };
 }
 
+/**
+ * Flatten subagent_event steps into real display steps with a subagent badge.
+ * This way subagent tool calls, results, and thinking show as full steps in the timeline.
+ */
 function buildDisplaySteps(steps) {
   const display = [];
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i];
-    if (step.type === 'tool_result' && step.tool === 'code_executor') {
+
+    // Flatten subagent events into real steps with a subagent tag
+    if (step.type === 'subagent_event') {
+      const inner = step.event || {};
+      const subagentName = step.subagent || 'subagent';
+
+      // Skip empty thinking markers
+      if (inner.type === 'thinking') continue;
+      // Skip status events from subagent
+      if (inner.type === 'status') continue;
+
+      // Convert subagent inner events into regular steps with a subagent badge
+      if (inner.type === 'tool_call') {
+        // Check if next subagent event is a matching tool_result
+        const next = steps[i + 1];
+        if (next && next.type === 'subagent_event' && next.event?.type === 'tool_result' && next.event?.tool === inner.tool) {
+          display.push({
+            type: 'tool_pair',
+            call: { ...inner, subagent: subagentName },
+            result: { ...next.event, subagent: subagentName },
+            subagent: subagentName,
+          });
+          i += 1;
+          continue;
+        }
+        display.push({ ...inner, subagent: subagentName });
+        continue;
+      }
+
+      if (inner.type === 'tool_result') {
+        // Standalone tool result (not paired above)
+        if (inner.tool === 'code_executor' || inner.tool === 'think') continue; // skip like main agent
+        display.push({ ...inner, subagent: subagentName });
+        continue;
+      }
+
+      if (inner.type === 'model_thinking' || inner.type === 'reasoning' || inner.type === 'complete' || inner.type === 'error' || inner.type === 'think') {
+        display.push({ ...inner, subagent: subagentName });
+        continue;
+      }
+
+      // Fallback: show as generic subagent event
+      display.push(step);
       continue;
     }
+
+    // Skip code_executor standalone results (paired above)
+    if (step.type === 'tool_result' && (step.tool === 'code_executor' || step.tool === 'think' || step.tool === 'set_todo_list')) {
+      continue;
+    }
+    if (step.type === 'tool_call' && (step.tool === 'think' || step.tool === 'set_todo_list')) {
+      continue;
+    }
+    // Pair main agent tool_call + tool_result
     if (step.type === 'tool_call') {
       const next = steps[i + 1];
       if (next && next.type === 'tool_result' && next.tool === step.tool) {
@@ -155,6 +215,10 @@ function buildTodos(steps) {
   return todos;
 }
 
+function SubagentBadge({ name }) {
+  return <span className="subagent-badge">{name}</span>;
+}
+
 function StepItem({ step }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -174,31 +238,61 @@ function StepItem({ step }) {
     const meta = summarizeToolResult(result, parsed, preview);
     const isFileWrite = call.tool === 'file_manager';
     const isCodeExec = call.tool === 'code_executor';
-    const showText = expanded ? fullText : truncateBlock(fullText, 8, 1200).text;
-
     const showIn = isCodeExec && codePreview;
+    const subagent = step.subagent || call.subagent;
 
     return (
-      <div className={`step-item tool-pair ${toolClass} ${isCodeExec ? 'bash-step' : ''}`} onClick={() => setExpanded(!expanded)}>
+      <div className={`step-item tool-pair ${toolClass} ${isCodeExec ? 'bash-step' : ''} ${subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
         <div className="step-header">
           {Icon && <Icon size={14} />}
           <div className="step-text">
             <span className="step-kind">{kind}</span>
             {title && <span className="step-title">{title}</span>}
           </div>
+          {subagent && <SubagentBadge name={subagent} />}
         </div>
         {isCodeExec && showIn && (
           <div className="io-block">
-            {showIn && (
-              <div className="io-row">
-                <div className="io-label">IN</div>
-                <pre className="io-content">{codeDisplay}</pre>
-              </div>
-            )}
+            <div className="io-row">
+              <div className="io-label">IN</div>
+              <pre className="io-content">{codeDisplay}</pre>
+            </div>
           </div>
         )}
         {isFileWrite && meta && (
           <div className="step-meta">{meta}</div>
+        )}
+      </div>
+    );
+  }
+
+  if (step.type === 'subagent_start') {
+    return (
+      <div className="step-item subagent-marker subagent-start-step">
+        <div className="step-header">
+          <Users size={14} />
+          <div className="step-text">
+            <span className="step-kind">{step.subagent}</span>
+            <span className="step-title">started</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step.type === 'subagent_done') {
+    const previewText = (step.output || '').slice(0, 120);
+    return (
+      <div className="step-item subagent-marker subagent-done-step" onClick={() => setExpanded(!expanded)}>
+        <div className="step-header">
+          <CheckCircle size={14} />
+          <div className="step-text">
+            <span className="step-kind">{step.subagent}</span>
+            <span className="step-title">done</span>
+          </div>
+        </div>
+        {expanded && previewText && (
+          <pre className="model-thinking-content">{step.output}</pre>
         )}
       </div>
     );
@@ -218,30 +312,126 @@ function StepItem({ step }) {
     );
   }
 
-  if (step.type === 'thinking') {
+  if (step.type === 'subagent_catalog') {
+    const list = Array.isArray(step.subagents) ? step.subagents : [];
+    const names = list.map(item => item.name).filter(Boolean);
+    const preview = names.length
+      ? names.slice(0, 4).join(', ') + (names.length > 4 ? ` +${names.length - 4}` : '')
+      : 'None';
     return (
-      <div className="step-item thinking step-thinking">
+      <div className="step-item subagent-catalog" onClick={() => setExpanded(!expanded)}>
+        <div className="step-header">
+          <Users size={14} />
+          <div className="step-text">
+            <span className="step-kind">Subagents</span>
+            <span className="step-title">{preview}</span>
+          </div>
+        </div>
+        {expanded && (
+          <div className="subagent-catalog-body">
+            {list.length === 0 && <div className="subagent-catalog-empty">No subagents available.</div>}
+            {list.map(item => (
+              <div key={item.name} className="subagent-catalog-item">
+                <span className="subagent-catalog-name">{item.name}</span>
+                {item.description && <span className="subagent-catalog-desc">{item.description}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (step.type === 'todo_list') {
+    const items = Array.isArray(step.items) ? step.items : [];
+    const doneCount = items.filter(t => t.status === 'done').length;
+    const summary = `${doneCount}/${items.length} done`;
+    return (
+      <div className={`step-item todo-list-step ${expanded ? 'expanded' : ''}`} onClick={() => setExpanded(!expanded)}>
+        <div className="step-header">
+          <ListTodo size={14} />
+          <div className="step-text">
+            <span className="step-kind">Todo</span>
+            <span className="step-title">{summary}</span>
+          </div>
+        </div>
+        {expanded && (
+          <div className="todo-list-body">
+            {items.map((item, idx) => (
+              <div key={idx} className={`todo-item todo-${item.status}`}>
+                {item.status === 'done' ? <CheckCircle size={12} /> : item.status === 'in_progress' ? <CircleDot size={12} /> : <Circle size={12} />}
+                <span className="todo-title">{item.title}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (step.type === 'thinking') {
+    return null;
+  }
+
+  if (step.type === 'model_thinking') {
+    const previewText = (step.content || '').slice(0, 120).replace(/\n/g, ' ');
+    const full = step.content || '';
+    const displayText = expanded ? full : truncateBlock(full, 8, 1200).text;
+    return (
+      <div className={`step-item model-thinking step-model-thinking ${expanded ? 'expanded' : ''} ${step.subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
         <div className="step-header">
           <Brain size={14} />
           <div className="step-text">
-            <span className="step-kind">Thinking</span>
-            <span className="step-title">Step {step.iteration}</span>
+            <span className="step-kind">Deep Thinking</span>
+            <span className="step-title">{expanded ? `Step ${step.iteration}` : previewText}</span>
           </div>
+          {step.subagent && <SubagentBadge name={step.subagent} />}
         </div>
+        {expanded && (
+          <pre className="model-thinking-content">{displayText}</pre>
+        )}
+      </div>
+    );
+  }
+
+  if (step.type === 'think') {
+    const previewText = (step.content || '').slice(0, 120).replace(/\n/g, ' ');
+    const full = step.content || '';
+    const displayText = expanded ? full : truncateBlock(full, 6, 800).text;
+    return (
+      <div className={`step-item think-step ${expanded ? 'expanded' : ''} ${step.subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
+        <div className="step-header">
+          <Brain size={14} />
+          <div className="step-text">
+            <span className="step-kind">Internal</span>
+            <span className="step-title">{expanded ? '' : previewText}</span>
+          </div>
+          {step.subagent && <SubagentBadge name={step.subagent} />}
+        </div>
+        {expanded && (
+          <pre className="model-thinking-content">{displayText}</pre>
+        )}
       </div>
     );
   }
 
   if (step.type === 'reasoning') {
+    const previewText = (step.content || '').slice(0, 120).replace(/\n/g, ' ');
+    const full = step.content || '';
+    const displayText = expanded ? full : truncateBlock(full, 8, 1200).text;
     return (
-      <div className="step-item reasoning step-reasoning">
+      <div className={`step-item model-thinking step-model-thinking ${expanded ? 'expanded' : ''} ${step.subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
         <div className="step-header">
           <Lightbulb size={14} />
           <div className="step-text">
-            <span className="step-kind">Reasoning</span>
-            <span className="step-title">{step.content}</span>
+            <span className="step-kind">Thinking</span>
+            <span className="step-title">{expanded ? '' : previewText}</span>
           </div>
+          {step.subagent && <SubagentBadge name={step.subagent} />}
         </div>
+        {expanded && (
+          <pre className="model-thinking-content">{displayText}</pre>
+        )}
       </div>
     );
   }
@@ -256,13 +446,14 @@ function StepItem({ step }) {
       : '';
     const toolClass = step.tool ? `tool-${step.tool}` : '';
     return (
-      <div className={`step-item tool-call ${toolClass} ${step.tool === 'code_executor' ? 'bash-step' : ''}`} onClick={() => setExpanded(!expanded)}>
+      <div className={`step-item tool-call ${toolClass} ${step.tool === 'code_executor' ? 'bash-step' : ''} ${step.subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
         <div className="step-header">
           {Icon && <Icon size={14} />}
           <div className="step-text">
             <span className="step-kind">{kind}</span>
             {title && <span className="step-title">{title}</span>}
           </div>
+          {step.subagent && <SubagentBadge name={step.subagent} />}
         </div>
         {codePreview && (
           <div className="io-block">
@@ -285,17 +476,52 @@ function StepItem({ step }) {
     const title = summarizeToolResult(step, parsed, preview);
 
     return (
-      <div className={`step-item tool-result ${step.success ? 'success step-result-success' : 'error step-result-error'}`} onClick={() => setExpanded(!expanded)}>
+      <div className={`step-item tool-result ${step.success ? 'success step-result-success' : 'error step-result-error'} ${step.subagent ? 'from-subagent' : ''}`} onClick={() => setExpanded(!expanded)}>
         <div className="step-header">
           {step.success ? <CheckCircle size={14} /> : <XCircle size={14} />}
           <div className="step-text">
             <span className="step-kind">{step.success ? 'OUT' : 'Error'}</span>
             {title && <span className="step-title">{title}</span>}
           </div>
+          {step.subagent && <SubagentBadge name={step.subagent} />}
         </div>
         {expanded && fullText && (
           <pre className="tool-result-full">{step.result}</pre>
         )}
+      </div>
+    );
+  }
+
+  if (step.type === 'complete' && step.subagent) {
+    const previewText = (step.content || '').slice(0, 120);
+    return (
+      <div className={`step-item step-result-success from-subagent`} onClick={() => setExpanded(!expanded)}>
+        <div className="step-header">
+          <CheckCircle size={14} />
+          <div className="step-text">
+            <span className="step-kind">Done</span>
+            <span className="step-title">{expanded ? '' : previewText}</span>
+          </div>
+          <SubagentBadge name={step.subagent} />
+        </div>
+        {expanded && step.content && (
+          <pre className="tool-result-full">{step.content}</pre>
+        )}
+      </div>
+    );
+  }
+
+  if (step.type === 'error' && step.subagent) {
+    return (
+      <div className="step-item step-result-error from-subagent">
+        <div className="step-header">
+          <XCircle size={14} />
+          <div className="step-text">
+            <span className="step-kind">Error</span>
+            <span className="step-title">{step.message}</span>
+          </div>
+          <SubagentBadge name={step.subagent} />
+        </div>
       </div>
     );
   }
@@ -315,6 +541,11 @@ function StepItem({ step }) {
         <span className="context-usage-badge">{step.usagePercent}%</span>
       </div>
     );
+  }
+
+  // Fallback for unhandled subagent_event (shouldn't happen after flattening)
+  if (step.type === 'subagent_event') {
+    return null;
   }
 
   return null;

@@ -5,16 +5,20 @@ class TaskStore {
     this.tasks = new Map();
   }
 
-  create() {
+  create(metadata = {}) {
     const id = randomUUID();
     const task = {
       id,
       status: 'pending',
       messages: [],
+      checkpoints: [],
+      nextCheckpointId: 0,
+      pendingDmail: null,
       currentStep: 0,
       result: null,
       error: null,
       createdAt: Date.now(),
+      ...metadata,
     };
     this.tasks.set(id, task);
     return task;
@@ -27,12 +31,14 @@ class TaskStore {
   }
 
   list() {
-    return Array.from(this.tasks.values()).map(t => ({
-      id: t.id,
-      status: t.status,
-      currentStep: t.currentStep,
-      createdAt: t.createdAt,
-    }));
+    return Array.from(this.tasks.values())
+      .filter(t => t.kind !== 'subagent')
+      .map(t => ({
+        id: t.id,
+        status: t.status,
+        currentStep: t.currentStep,
+        createdAt: t.createdAt,
+      }));
   }
 }
 

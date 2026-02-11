@@ -18,12 +18,12 @@ function sleep(ms) {
 /**
  * Chat completion with auth profile rotation
  */
-export async function chatCompletion({ messages, tools, toolChoice = 'auto' }) {
+export async function chatCompletion({ messages, tools, toolChoice = 'auto', modelOverride = null }) {
   const profileManager = getAuthProfileManager();
 
   // If we have multiple profiles, use failover
   if (profileManager.profiles.length > 0) {
-    return chatCompletionWithFailover({ messages, tools, toolChoice });
+    return chatCompletionWithFailover({ messages, tools, toolChoice, modelOverride });
   }
 
   // Fallback to legacy single-client mode
@@ -31,18 +31,18 @@ export async function chatCompletion({ messages, tools, toolChoice = 'auto' }) {
     throw new Error('No API key configured. Set DEEPSEEK_API_KEY or other provider keys.');
   }
 
-  return chatCompletionLegacy({ messages, tools, toolChoice });
+  return chatCompletionLegacy({ messages, tools, toolChoice, modelOverride });
 }
 
 /**
  * Chat completion with automatic profile failover
  */
-async function chatCompletionWithFailover({ messages, tools, toolChoice }) {
+async function chatCompletionWithFailover({ messages, tools, toolChoice, modelOverride }) {
   const profileManager = getAuthProfileManager();
 
   return profileManager.executeWithFailover(async (client, model) => {
     const params = {
-      model,
+      model: modelOverride || model,
       messages,
       temperature: 0.2,
       max_tokens: 4096,
@@ -60,9 +60,9 @@ async function chatCompletionWithFailover({ messages, tools, toolChoice }) {
 /**
  * Legacy single-client chat completion (with retries)
  */
-async function chatCompletionLegacy({ messages, tools, toolChoice }) {
+async function chatCompletionLegacy({ messages, tools, toolChoice, modelOverride }) {
   const params = {
-    model: 'deepseek-chat',
+    model: modelOverride || 'deepseek-chat',
     messages,
     temperature: 0.2,
     max_tokens: 4096,
