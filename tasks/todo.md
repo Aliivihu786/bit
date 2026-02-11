@@ -4,6 +4,8 @@
 - Enforce agent guidelines with a lightweight repo check and CI workflow (no new deps).
 - Keep changes minimal and reversible.
 - Implement subagents with fixed + dynamic definitions; reuse existing tool/orchestrator patterns.
+- Add subagent orchestration flow: plan → delegate → aggregate → verify.
+- Prefer config-driven defaults and clear UI indicators.
 
 ## Checklist
 - [x] Restate goal + acceptance criteria
@@ -14,6 +16,35 @@
 - [x] Run verification (lint/tests/build/manual repro)
 - [x] Summarize changes + verification story
 - [ ] Record lessons (if any)
+
+## Subagent Workflow v2
+
+### Checklist
+- [x] Restate goal + acceptance criteria
+- [x] Locate existing orchestration/plan patterns
+- [x] Design: minimal decomposition + routing + aggregation
+- [x] Implement smallest safe slice
+- [ ] Add/adjust tests
+- [x] Run verification (lint/tests/build/manual repro)
+- [x] Summarize changes + verification story
+- [ ] Record lessons (if any)
+
+### Goal + Acceptance Criteria
+- Goal: Align subagent orchestration with the full workflow (decompose, delegate, aggregate, optional review) without breaking existing behavior.
+- Acceptance criteria:
+  - Orchestrator can decide when to decompose a task into subtasks.
+  - Subtasks are routed to appropriate subagents and can run in parallel with a configurable concurrency cap.
+  - Subagent outputs are aggregated into a single summary that is fed back to the main agent.
+  - Optional reviewer/critic pass can be enabled to validate the aggregated result.
+  - UI shows progress/selection for auto-delegated subagents.
+  - If todo items remain incomplete, the model is prompted to finish and premature final responses are suppressed.
+
+### Results
+- Added LLM-based task decomposition and batch routing with parallel subagent execution and aggregation.
+- Added optional reviewer pass via `SUBAGENT_REVIEWER`.
+- UI now supports multi-subagent auto-selection indicator.
+- Strengthened system prompt to discard premature final summaries.
+- Verification: `node -e "import('./server/agent/orchestrator.js')..."`.
 
 ## Goal + Acceptance Criteria
 - Goal: Enforce `claude.md` guidelines with automated checks.

@@ -1,0 +1,77 @@
+{
+  "agents": [
+    {
+      "name": "default",
+      "displayName": "Default Assistant",
+      "description": "General-purpose coding assistant with all tools available. Best for everyday development tasks.",
+      "systemPrompt": "You are a helpful AI coding assistant. You help users build software, debug issues, research solutions, and manage their development workflow. You have access to web search, file management, code execution, and can delegate work to specialized subagents. Be concise, accurate, and proactive.",
+      "tools": [
+        "web_search",
+        "web_browser",
+        "code_executor",
+        "file_manager",
+        "canvas",
+        "project_scaffold",
+        "task",
+        "create_subagent",
+        "think",
+        "todo",
+        "memory"
+      ],
+      "excludeTools": [],
+      "color": "#3b82f6"
+    },
+    {
+      "name": "okabe",
+      "displayName": "Okabe (Experimental)",
+      "description": "Experimental agent with D-Mail time-travel debugging. Can checkpoint conversations and send messages back to try alternative approaches.",
+      "systemPrompt": "You are Okabe, an experimental AI agent with advanced reasoning capabilities. You can use D-Mail to send insights back to earlier conversation checkpoints when you discover better approaches. Think deeply about problems, explore multiple solution paths, and don't hesitate to backtrack when needed. You have all the tools of the default agent plus D-Mail for temporal navigation.",
+      "tools": [
+        "web_search",
+        "web_browser",
+        "code_executor",
+        "file_manager",
+        "canvas",
+        "project_scaffold",
+        "task",
+        "create_subagent",
+        "dmail",
+        "think",
+        "todo",
+        "memory"
+      ],
+      "excludeTools": [],
+      "color": "#8b5cf6"
+    },
+    {
+      "name": "coder",
+      "displayName": "Focused Coder",
+      "description": "Streamlined agent focused purely on writing and executing code. No web access - just coding.",
+      "systemPrompt": "You are a focused coding agent. You write clean, efficient, and well-tested code. You prefer action over discussion - read files, write code, test it, iterate. You don't browse the web or do research - you focus purely on implementation. Use the canvas for prototyping and the code executor to verify your work.",
+      "tools": [
+        "code_executor",
+        "file_manager",
+        "canvas",
+        "think",
+        "todo"
+      ],
+      "excludeTools": [],
+      "color": "#10b981"
+    },
+    {
+      "name": "researcher",
+      "displayName": "Web Researcher",
+      "description": "Research-focused agent for finding documentation, APIs, and technical information. Cannot write code.",
+      "systemPrompt": "You are a research specialist. Your job is to find accurate, up-to-date information from the web. Use search strategically, cross-reference multiple sources, and provide clear summaries with citations. You cannot write code or modify files - you focus purely on gathering and synthesizing information.",
+      "tools": [
+        "web_search",
+        "web_browser",
+        "think",
+        "todo",
+        "memory"
+      ],
+      "excludeTools": [],
+      "color": "#f59e0b"
+    }
+  ]
+}

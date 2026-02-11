@@ -11,6 +11,7 @@ import { DMailTool } from '../tools/dmailTool.js';
 import { ThinkTool } from '../tools/thinkTool.js';
 import { TodoTool } from '../tools/todoTool.js';
 import { subagentManager } from './subagentManager.js';
+import { approvalManager } from './approvalManager.js';
 
 class ToolRegistry {
   constructor() {
@@ -48,6 +49,31 @@ class ToolRegistry {
         throw new Error(`Tool not allowed for this agent: ${name}`);
       }
     }
+
+    // Check if approval is required for this tool call
+    const needsApproval = approvalManager.requiresApproval(name, args);
+    if (needsApproval && context?.taskId) {
+      const toolCallId = context.toolCallId || `call_${Date.now()}`;
+
+      // Emit approval request event to UI
+      context?.onEvent?.({
+        type: 'approval_required',
+        toolCallId,
+        toolName: name,
+        args,
+        message: `Approve ${name}?`,
+      });
+
+      try {
+        // Wait for user approval
+        await approvalManager.requestApproval(context.taskId, toolCallId, name, args);
+        console.log(`[TOOL REGISTRY] Approval granted for ${name}`);
+      } catch (err) {
+        console.log(`[TOOL REGISTRY] Approval denied for ${name}: ${err.message}`);
+        throw new Error(`User denied approval: ${err.message}`);
+      }
+    }
+
     return tool.execute(args, context);
   }
 }

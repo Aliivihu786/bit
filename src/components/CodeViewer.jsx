@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { getWorkspaceFile } from '../api/client.js';
 import { FileCode, Loader } from 'lucide-react';
+import { useTheme } from '../hooks/useTheme.js';
 
 const extToLang = {
   js: 'javascript',
@@ -25,6 +26,7 @@ const extToLang = {
 };
 
 export function CodeViewer({ taskId, file }) {
+  const theme = useTheme();
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -68,7 +70,7 @@ export function CodeViewer({ taskId, file }) {
             height="100%"
             language={language}
             value={content}
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             options={{
               readOnly: true,
               fontSize: 13,

@@ -29,7 +29,7 @@
       enable = true;
       previews = {
         web = {
-          command = ["npm" "run" "dev" "--" "--port" "$PORT" "--host" "0.0.0.0"];
+          command = ["sh" "-c" "npm run dev:server & npm run dev:client -- --port $PORT --host 0.0.0.0"];
           manager = "web";
         };
       };

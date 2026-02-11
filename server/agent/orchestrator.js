@@ -2,6 +2,13 @@ import { chatCompletion } from './llm.js';
 import { getSystemPrompt, SYSTEM_PROMPT } from './prompts.js';
 import { config } from '../config.js';
 import {
+  autoSelectSubagent,
+  autoSelectSubagentLLM,
+  buildAutoSubagentPrompt,
+  buildSubagentBatchPrompt,
+  planSubagentDecomposition,
+} from './subagentRouter.js';
+import {
   ContextWindowGuard,
   createForceCompletionPrompt,
   createCompactionNotice,
@@ -359,6 +366,101 @@ export class AgentOrchestrator {
     this.taskStore = taskStore;
   }
 
+  async _workspaceIsEmpty(taskId) {
+    try {
+      const result = await this.toolRegistry.executeTool(
+        'file_manager',
+        { action: 'list', path: '' },
+        { taskId, allowedTools: ['file_manager'], excludedTools: [] },
+      );
+      const parsed = JSON.parse(result);
+      const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
+      return entries.length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  _queueDeferredSubagent(taskId, subagent, prompt) {
+    try {
+      const task = this.taskStore.get(taskId);
+      if (!task._pendingSubagentsAfterWorkspace) {
+        task._pendingSubagentsAfterWorkspace = [];
+      }
+      const exists = task._pendingSubagentsAfterWorkspace
+        .some(item => item.subagent?.name === subagent.name);
+      if (!exists) {
+        task._pendingSubagentsAfterWorkspace.push({
+          subagent,
+          prompt,
+        });
+      }
+    } catch {
+      // ignore if task missing
+    }
+  }
+
+  async _flushDeferredSubagents(taskId, onEvent) {
+    let pending = [];
+    try {
+      const task = this.taskStore.get(taskId);
+      pending = Array.isArray(task._pendingSubagentsAfterWorkspace)
+        ? task._pendingSubagentsAfterWorkspace
+        : [];
+      if (pending.length === 0) return;
+      task._pendingSubagentsAfterWorkspace = [];
+    } catch {
+      return;
+    }
+
+    for (const item of pending) {
+      await this.runSubagent({
+        subagent: item.subagent,
+        prompt: item.prompt,
+        parentTaskId: taskId,
+        onEvent,
+        toolCallId: null,
+      });
+    }
+  }
+
+  async _runSubagentBatch(taskId, items, onEvent) {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const limit = Math.max(1, Number(config.subagentMaxParallel) || 1);
+    const results = new Array(items.length);
+    let index = 0;
+
+    const runNext = async () => {
+      const current = index;
+      index += 1;
+      if (current >= items.length) return;
+      const item = items[current];
+      results[current] = await this.runSubagent({
+        subagent: item.subagent,
+        prompt: item.prompt,
+        parentTaskId: taskId,
+        onEvent,
+        toolCallId: null,
+      });
+      await runNext();
+    };
+
+    const workers = Array.from({ length: Math.min(limit, items.length) }, () => runNext());
+    await Promise.all(workers);
+    return results;
+  }
+
+  _formatSubagentAggregation(outputs) {
+    if (!Array.isArray(outputs) || outputs.length === 0) return '';
+    return outputs
+      .map((entry) => {
+        const header = entry.title ? `${entry.name} — ${entry.title}` : entry.name;
+        const content = (entry.output || '').trim();
+        return `### ${header}\n${content || '(no output)'}`;
+      })
+      .join('\n\n');
+  }
+
   async run(taskId, userMessage, onEvent, options = {}) {
     const task = this.taskStore.get(taskId);
     ensureCheckpointState(task);
@@ -367,8 +469,6 @@ export class AgentOrchestrator {
     if (task.checkpoints.length === 0) {
       addCheckpoint(task, checkpointMarkersEnabled);
     }
-    task.messages.push({ role: 'user', content: userMessage });
-
     // Wrap onEvent to prevent SSE write errors from crashing the orchestrator
     // Also intercept todo_list events to track completion state server-side
     const safeEvent = (event) => {
@@ -379,6 +479,159 @@ export class AgentOrchestrator {
       }
       try { onEvent(event); } catch { /* client disconnected */ }
     };
+
+    // Auto-select and delegate to a subagent before the main agent runs
+    if (!options.isSubagent && this.toolRegistry.subagentManager) {
+      const list = this.toolRegistry.subagentManager.list();
+      let handled = false;
+
+      if (config.subagentDecompose) {
+        const plan = await planSubagentDecomposition(userMessage, list);
+        if (plan?.tasks?.length) {
+          const grouped = new Map();
+          const mainTasks = [];
+
+          for (const taskItem of plan.tasks) {
+            let assigned = null;
+            if (taskItem.subagent && taskItem.subagent !== 'none') {
+              assigned = list.find(s => s.name === taskItem.subagent) || null;
+            }
+            if (!assigned) {
+              const fallback = autoSelectSubagent(taskItem.prompt, list);
+              if (fallback) assigned = fallback.subagent;
+            }
+            if (!assigned) {
+              mainTasks.push(taskItem);
+              continue;
+            }
+            if (!grouped.has(assigned.name)) {
+              grouped.set(assigned.name, { subagent: assigned, tasks: [] });
+            }
+            grouped.get(assigned.name).tasks.push(taskItem);
+          }
+
+          const batchItems = Array.from(grouped.values()).map((entry) => ({
+            subagent: entry.subagent,
+            tasks: entry.tasks,
+            prompt: buildSubagentBatchPrompt(userMessage, entry.tasks),
+          }));
+
+          if (batchItems.length > 0) {
+            safeEvent({
+              type: 'subagent_auto_plan',
+              reason: plan.reason || '',
+              subagents: batchItems.map(item => ({
+                name: item.subagent.name,
+                description: item.subagent.description || '',
+                tasks: item.tasks.map(t => t.title || t.prompt),
+              })),
+            });
+
+            const shouldDefer = await this._workspaceIsEmpty(taskId);
+            if (shouldDefer) {
+              for (const item of batchItems) {
+                safeEvent({
+                  type: 'subagent_deferred',
+                  subagent: item.subagent.name,
+                  reason: 'Workspace is empty. Waiting for files to be created.',
+                });
+                this._queueDeferredSubagent(taskId, item.subagent, item.prompt);
+              }
+            } else {
+              const outputs = await this._runSubagentBatch(taskId, batchItems, safeEvent);
+              const aggregated = outputs.map((output, index) => ({
+                name: batchItems[index].subagent.name,
+                title: batchItems[index].tasks.map(t => t.title).filter(Boolean).join(', '),
+                output,
+              }));
+              const summary = this._formatSubagentAggregation(aggregated);
+              if (summary) {
+                task.messages.push({
+                  role: 'system',
+                  content: `Subagent findings:\n${summary}`,
+                });
+              }
+              if (mainTasks.length > 0) {
+                const mainList = mainTasks
+                  .map(t => `- ${t.title || t.prompt}`)
+                  .join('\n');
+                task.messages.push({
+                  role: 'system',
+                  content: `Subtasks for the main agent to handle:\n${mainList}`,
+                });
+              }
+
+              if (config.subagentReviewer) {
+                const reviewer = list.find(s => s.name === config.subagentReviewer);
+                if (reviewer) {
+                  const reviewPrompt = [
+                    'Review the following subagent findings for gaps, errors, or missing work.',
+                    'Return actionable feedback for the main agent.',
+                    '',
+                    summary || '(no findings)',
+                  ].join('\n');
+                  const reviewOutput = await this.runSubagent({
+                    subagent: reviewer,
+                    prompt: reviewPrompt,
+                    parentTaskId: taskId,
+                    onEvent: safeEvent,
+                    toolCallId: null,
+                  });
+                  if (reviewOutput) {
+                    task.messages.push({
+                      role: 'system',
+                      content: `Reviewer "${reviewer.name}" feedback:\n${reviewOutput}`,
+                    });
+                  }
+                }
+              }
+            }
+
+            handled = true;
+          }
+        }
+      }
+
+      if (!handled) {
+        let candidate = autoSelectSubagent(userMessage, list);
+        if (!candidate) {
+          candidate = await autoSelectSubagentLLM(userMessage, list);
+        }
+        if (candidate) {
+          const shouldDefer = await this._workspaceIsEmpty(taskId);
+          if (shouldDefer) {
+            safeEvent({
+              type: 'subagent_deferred',
+              subagent: candidate.subagent.name,
+              reason: 'Workspace is empty. Waiting for files to be created.',
+            });
+            this._queueDeferredSubagent(taskId, candidate.subagent, buildAutoSubagentPrompt(userMessage));
+          } else {
+            safeEvent({
+              type: 'subagent_auto_selected',
+              subagent: candidate.subagent.name,
+              description: candidate.subagent.description || '',
+              reason: candidate.reason || '',
+              score: candidate.score || 0,
+            });
+            const subPrompt = buildAutoSubagentPrompt(userMessage);
+            const subOutput = await this.runSubagent({
+              subagent: candidate.subagent,
+              prompt: subPrompt,
+              parentTaskId: taskId,
+              onEvent: safeEvent,
+              toolCallId: null,
+            });
+            task.messages.push({
+              role: 'system',
+              content: `Auto-selected subagent "${candidate.subagent.name}" summary:\n${subOutput}`,
+            });
+          }
+        }
+      }
+    }
+
+    task.messages.push({ role: 'user', content: userMessage });
 
     let iterations = 0;
     const maxIter = options.maxIterations || config.maxIterations;
@@ -577,8 +830,9 @@ export class AgentOrchestrator {
             let result;
             let llmResult; // stripped version for LLM (no bulky HTML)
             try {
+              const approvalTaskId = options.parentTaskId || taskId;
               result = await this.toolRegistry.executeTool(toolName, toolArgs, {
-                taskId,
+                taskId: approvalTaskId,
                 onEvent: safeEvent,
                 runSubagent: this.runSubagent.bind(this),
                 allowedTools: options.allowedTools,
@@ -611,6 +865,29 @@ export class AgentOrchestrator {
               }
 
               safeEvent({ type: 'tool_result', tool: toolName, result: llmResult, success: true });
+
+              // If workspace changes, run any deferred subagents
+              let shouldFlush = false;
+              if (toolName === 'file_manager') {
+                try {
+                  const parsed = JSON.parse(llmResult || '{}');
+                  if (parsed.written || parsed.created || parsed.deleted) {
+                    shouldFlush = true;
+                  }
+                } catch {
+                  // ignore parse errors
+                }
+              }
+              if (toolName === 'project_scaffold' || toolName === 'canvas') {
+                shouldFlush = true;
+              }
+              if (toolName === 'code_executor') {
+                // Code exec may create files; check workspace quickly if any deferred
+                shouldFlush = true;
+              }
+              if (shouldFlush) {
+                await this._flushDeferredSubagents(taskId, safeEvent);
+              }
             } catch (err) {
               llmResult = JSON.stringify({ error: err.message });
               safeEvent({ type: 'tool_result', tool: toolName, result: llmResult, success: false });
@@ -861,6 +1138,21 @@ export class AgentOrchestrator {
   }
 
   async runSubagent({ subagent, prompt, parentTaskId, onEvent, toolCallId }) {
+    if (parentTaskId) {
+      const empty = await this._workspaceIsEmpty(parentTaskId);
+      if (empty) {
+        this._queueDeferredSubagent(parentTaskId, subagent, prompt);
+        try {
+          onEvent?.({
+            type: 'subagent_deferred',
+            subagent: subagent.name,
+            reason: 'Workspace is empty. Waiting for files to be created.',
+            toolCallId: toolCallId || null,
+          });
+        } catch {}
+        return '';
+      }
+    }
     // Inherit the full main agent prompt, strip subagent/scaffold sections, add subagent overlay
     const parentPrompt = await getSystemPrompt();
     const subPrompt = subagent.systemPrompt?.trim() || '';
@@ -889,6 +1181,16 @@ export class AgentOrchestrator {
     };
 
     const wrappedEvent = (event) => {
+      if (event?.type === 'approval_required') {
+        safeEmit({
+          ...event,
+          subagent: subagent.name,
+          message: event.message
+            ? `${event.message} (subagent: ${subagent.name})`
+            : `Approve ${event.toolName}? (subagent: ${subagent.name})`,
+        });
+        return;
+      }
       safeEmit({
         type: 'subagent_event',
         subagent: subagent.name,
@@ -912,6 +1214,7 @@ export class AgentOrchestrator {
       allowedTools,
       excludedTools,
       isSubagent: true,
+      parentTaskId,
     };
 
     let resultTask = await this.run(

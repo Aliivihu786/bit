@@ -1,10 +1,12 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { User, Bot } from 'lucide-react';
+import { useTheme } from '../hooks/useTheme.js';
 
 export function ChatMessage({ message }) {
+  const theme = useTheme();
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
 
@@ -36,7 +38,7 @@ export function ChatMessage({ message }) {
                 const match = /language-(\w+)/.exec(className || '');
                 return !inline && match ? (
                   <SyntaxHighlighter
-                    style={oneDark}
+                    style={theme === 'dark' ? oneDark : oneLight}
                     language={match[1]}
                     PreTag="div"
                     {...props}

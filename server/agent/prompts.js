@@ -1,5 +1,6 @@
 import { getSkillManager } from './skillManager.js';
 import { subagentManager } from './subagentManager.js';
+import { agentManager } from './agentManager.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -20,6 +21,7 @@ const BASE_SYSTEM_PROMPT = `You are Bit Agent, an autonomous AI assistant capabl
 - Keep your final response concise and focused on what was accomplished.
 - Never fabricate information -- always verify via tools.
 - **CRITICAL**: If you created a todo list, you MUST complete ALL items (mark them "done") before providing your final response. You cannot finish with incomplete todos.
+- If you are prompted to continue due to incomplete todos, discard any premature "final summary" and keep working until everything is done.
 - When you are done with the task, provide a clear summary of what was accomplished.
 
 ## Think Tool:
@@ -190,23 +192,33 @@ let skillsLoaded = false;
 
 /**
  * Get the full system prompt including skills and available subagents
+ * @param {object} options - Options for building the system prompt
+ * @param {string} options.agentName - Name of the agent profile to use (default: 'default')
  */
-export async function getSystemPrompt() {
+export async function getSystemPrompt(options = {}) {
+  const agentName = options.agentName || 'default';
+  const agent = agentManager.get(agentName);
+
+  // Build additional context sections
   if (!cachedBasePrompt || !skillsLoaded) {
     try {
       const skillManager = await getSkillManager();
       const skillsPrompt = skillManager.getSkillsPrompt();
       const guidelinesPrompt = loadGuidelinesPrompt();
-      cachedBasePrompt = BASE_SYSTEM_PROMPT + PROJECT_SCAFFOLD_PROMPT + guidelinesPrompt + skillsPrompt;
+      cachedBasePrompt = PROJECT_SCAFFOLD_PROMPT + guidelinesPrompt + skillsPrompt;
       skillsLoaded = true;
     } catch (err) {
       console.error('[Prompts] Error loading skills:', err.message);
-      cachedBasePrompt = BASE_SYSTEM_PROMPT;
+      cachedBasePrompt = '';
     }
   }
 
-  // Always append current subagent list (can change at runtime)
-  return cachedBasePrompt + buildSubagentListPrompt();
+  // Build final prompt: agent's custom system prompt + common context + subagent list
+  const finalPrompt = agent.systemPrompt + cachedBasePrompt + buildSubagentListPrompt();
+
+  console.log(`[Prompts] Using agent profile: ${agent.name} (${agent.displayName})`);
+
+  return finalPrompt;
 }
 
 /**

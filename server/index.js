@@ -7,6 +7,7 @@ import { browserRoutes } from './routes/browser.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { rateLimiter } from './middleware/rateLimiter.js';
 import { startCanvasServer } from './canvas/canvasServer.js';
+import { initializeCodebase } from './agent/autoInit.js';
 
 const app = express();
 
@@ -25,6 +26,9 @@ app.use(errorHandler);
 // Start main server
 app.listen(config.port, async () => {
   console.log(`Bit Agent server running on port ${config.port}`);
+
+  // Auto-initialize codebase documentation
+  await initializeCodebase();
 
   // Start canvas server for interactive UIs
   try {

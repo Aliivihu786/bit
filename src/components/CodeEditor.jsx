@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { getWorkspaceFile, saveWorkspaceFile } from '../api/client.js';
+import { useTheme } from '../hooks/useTheme.js';
 import {
   FileCode, Loader, Save, X, Split, Command,
   Search, ChevronDown, Copy, Check
@@ -18,6 +19,7 @@ const extToLang = {
 };
 
 export function CodeEditor({ taskId, file, onFileSelect, fileVersion }) {
+  const theme = useTheme();
   const [tabs, setTabs] = useState([]);
   const [activeTabId, setActiveTabId] = useState(null);
   const [splitView, setSplitView] = useState(false);
@@ -284,7 +286,7 @@ export function CodeEditor({ taskId, file, onFileSelect, fileVersion }) {
             height="100%"
             language={tab.language}
             value={tab.content}
-            theme="vs-dark"
+            theme={theme === 'dark' ? 'vs-dark' : 'vs'}
             options={editorOptions}
             onChange={(value) => handleEditorChange(value, tab.id)}
             onMount={(editor) => {

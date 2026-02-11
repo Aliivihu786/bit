@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:all": "sh -c 'npm run dev:server & npm run dev:client -- --port ${PORT:-5173} --host 0.0.0.0'",
     "dev:client": "vite",
     "dev:server": "nodemon server/index.js",
     "build": "vite build",

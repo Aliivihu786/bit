@@ -1,8 +1,8 @@
-export async function runAgent(message, taskId = null) {
+export async function runAgent(message, taskId = null, agentName = null) {
   const response = await fetch('/api/agent/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, taskId }),
+    body: JSON.stringify({ message, taskId, agentName }),
   });
 
   if (!response.ok) {
@@ -80,6 +80,30 @@ export async function createSubagent(payload) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.error || `Failed to create subagent: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateSubagent(name, payload) {
+  const res = await fetch(`/api/agent/subagents/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to update subagent: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteSubagent(name) {
+  const res = await fetch(`/api/agent/subagents/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to delete subagent: ${res.status}`);
   }
   return res.json();
 }

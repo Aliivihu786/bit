@@ -16,6 +16,8 @@ export function useAgent() {
   const [steps, setSteps] = useState([]);
   const [status, setStatus] = useState('idle');
   const [taskId, setTaskId] = useState(null);
+  const [selectedAgent, setSelectedAgent] = useState('default');
+  const [currentAgentInfo, setCurrentAgentInfo] = useState(null);
   const [browserState, setBrowserState] = useState(null);
   const [fileVersion, setFileVersion] = useState(0);
   const [chatHistory, setChatHistory] = useState(loadHistory);
@@ -25,6 +27,9 @@ export function useAgent() {
   const [terminalCommands, setTerminalCommands] = useState([]);
   const [checkpoints, setCheckpoints] = useState([]);
   const [todoList, setTodoList] = useState([]);
+  const [autoSubagent, setAutoSubagent] = useState(null);
+  const [approvalMode, setApprovalMode] = useState('ask'); // 'ask', 'auto', 'yolo'
+  const [pendingApproval, setPendingApproval] = useState(null); // { callId, toolName, args }
   const browserCallbackRef = useRef(null);
   const fileCallbackRef = useRef(null);
   const pendingCommandRef = useRef(null);
@@ -32,6 +37,8 @@ export function useAgent() {
   const taskIdRef = useRef(null);
   const pendingSubagentRef = useRef([]);
   const pendingSubagentAfterMainRef = useRef([]);
+  const pendingVerifyRef = useRef([]);
+  const verifyTimerRef = useRef(null);
   const statusRef = useRef(status);
 
   useEffect(() => {
@@ -52,14 +59,20 @@ export function useAgent() {
     fileCallbackRef.current = callback;
   }, []);
 
-  const sendMessage = useCallback(async (text) => {
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
+  const sendMessage = useCallback(async (text, options = {}) => {
+    const { silent = false, systemNotice = '' } = options;
+    if (!silent) {
+      setMessages(prev => [...prev, { role: 'user', content: text }]);
+    } else if (systemNotice) {
+      setMessages(prev => [...prev, { role: 'system', content: systemNotice }]);
+    }
     setStatus('running');
     setSteps([]);
+    setAutoSubagent(null);
     currentRunCommandsRef.current = []; // Clear commands for new run
 
     try {
-      const response = await runAgent(text, taskId);
+      const response = await runAgent(text, taskId, selectedAgent);
 
       await parseSSEStream(response, (event) => {
         switch (event.type) {
@@ -71,6 +84,10 @@ export function useAgent() {
               pendingSubagentRef.current = [];
               pending.forEach(item => runSubagent(item));
             }
+            break;
+          }
+          case 'agent_selected': {
+            setCurrentAgentInfo(event.agent);
             break;
           }
           case 'status':
@@ -252,11 +269,45 @@ export function useAgent() {
               remainingTokens: event.remainingTokens,
             });
             break;
+          case 'subagent_auto_selected':
+            setAutoSubagent({
+              name: event.subagent,
+              description: event.description,
+              reason: event.reason,
+              score: event.score,
+            });
+            setSteps(prev => [...prev, {
+              type: 'status',
+              message: `Auto-selected subagent: ${event.subagent}`,
+            }]);
+            break;
+          case 'subagent_auto_plan':
+            setAutoSubagent(
+              Array.isArray(event.subagents)
+                ? event.subagents.map(s => ({
+                  name: s.name,
+                  description: s.description,
+                  reason: event.reason || '',
+                  tasks: Array.isArray(s.tasks) ? s.tasks : [],
+                }))
+                : null,
+            );
+            setSteps(prev => [...prev, {
+              type: 'status',
+              message: `Auto-selected ${Array.isArray(event.subagents) ? event.subagents.length : 0} subagent(s)`,
+            }]);
+            break;
           case 'subagent_start':
             setSteps(prev => [...prev, {
               type: 'subagent_start',
               subagent: event.subagent,
               description: event.description,
+            }]);
+            break;
+          case 'subagent_deferred':
+            setSteps(prev => [...prev, {
+              type: 'status',
+              message: `Subagent ${event.subagent} deferred: ${event.reason || 'waiting for workspace files'}`,
             }]);
             break;
           case 'subagent_done':
@@ -300,6 +351,22 @@ export function useAgent() {
             setSteps(prev => [...prev, { type: 'todo_list', items }]);
             break;
           }
+          case 'approval_required': {
+            // Tool requires user approval
+            setPendingApproval({
+              callId: event.toolCallId,
+              toolName: event.toolName,
+              args: event.args,
+              message: event.message,
+            });
+            setSteps(prev => [...prev, {
+              type: 'approval_required',
+              toolName: event.toolName,
+              args: event.args,
+              message: event.message,
+            }]);
+            break;
+          }
         }
       });
       // Safety: if stream ends and status is still 'running', mark as completed
@@ -308,7 +375,25 @@ export function useAgent() {
       setStatus('error');
       setMessages(prev => [...prev, { role: 'assistant', content: `Connection error: ${err.message}` }]);
     }
-  }, [taskId]);
+  }, [taskId, selectedAgent]);
+
+  const scheduleAutoVerify = useCallback((subagentName, output) => {
+    const snippet = (output || '').slice(0, 4000);
+    pendingVerifyRef.current.push({ name: subagentName, output: snippet });
+    if (verifyTimerRef.current) return;
+    verifyTimerRef.current = setTimeout(() => {
+      const batch = [...pendingVerifyRef.current];
+      pendingVerifyRef.current = [];
+      verifyTimerRef.current = null;
+      if (batch.length === 0) return;
+      const names = batch.map(b => b.name).join(', ');
+      const details = batch.map(b => `Subagent ${b.name} output:\n${b.output}`).join('\n\n');
+      sendMessage(
+        `Verify the subagents' work and approve the changes. Check files, run any needed commands, and report verification. ${details}`,
+        { silent: true, systemNotice: `Auto-verifying subagent work: ${names}` },
+      );
+    }, 400);
+  }, [sendMessage]);
 
   const runSubagent = useCallback(async ({ subagentName, description, prompt, deferUntilComplete = false }) => {
     const activeTaskId = taskIdRef.current;
@@ -361,6 +446,27 @@ export function useAgent() {
               description: event.description,
             }]);
             break;
+          case 'approval_required': {
+            setPendingApproval({
+              callId: event.toolCallId,
+              toolName: event.toolName,
+              args: event.args,
+              message: event.message,
+            });
+            setSteps(prev => [...prev, {
+              type: 'approval_required',
+              toolName: event.toolName,
+              args: event.args,
+              message: event.message,
+            }]);
+            break;
+          }
+          case 'subagent_deferred':
+            setSteps(prev => [...prev, {
+              type: 'status',
+              message: `Subagent ${event.subagent} deferred: ${event.reason || 'waiting for workspace files'}`,
+            }]);
+            break;
           case 'subagent_done':
             setSteps(prev => [...prev, {
               type: 'subagent_done',
@@ -381,6 +487,9 @@ export function useAgent() {
               subagent: event.subagent,
               output: event.output || '',
             }]);
+            if (priorStatus !== 'running') {
+              scheduleAutoVerify(event.subagent, event.output || '');
+            }
             if (priorStatus !== 'running') setStatus('completed');
             break;
           case 'subagent_error':
@@ -460,12 +569,21 @@ export function useAgent() {
     setSteps([]);
     setStatus('idle');
     setTaskId(null);
+    setCurrentAgentInfo(null);
     setBrowserState(null);
     setFileVersion(0);
     setActiveChatId(null);
     setContextUsage({ usagePercent: 0, remainingTokens: 0 });
     setTerminalCommands([]);
     setTodoList([]);
+    setAutoSubagent(null);
+    pendingSubagentRef.current = [];
+    pendingSubagentAfterMainRef.current = [];
+    pendingVerifyRef.current = [];
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current);
+      verifyTimerRef.current = null;
+    }
   }, []);
 
   const loadChat = useCallback((chat) => {
@@ -476,6 +594,14 @@ export function useAgent() {
     setBrowserState(null);
     setFileVersion(0);
     setActiveChatId(chat.id);
+    setAutoSubagent(null);
+    pendingSubagentRef.current = [];
+    pendingSubagentAfterMainRef.current = [];
+    pendingVerifyRef.current = [];
+    if (verifyTimerRef.current) {
+      clearTimeout(verifyTimerRef.current);
+      verifyTimerRef.current = null;
+    }
   }, []);
 
   const deleteChat = useCallback((chatId) => {
@@ -487,11 +613,56 @@ export function useAgent() {
     if (activeChatId === chatId) resetChat();
   }, [activeChatId, resetChat]);
 
+  const approveAction = useCallback(async () => {
+    if (!pendingApproval || !taskId) return;
+    try {
+      await fetch(`/api/agent/approval/${taskId}/${pendingApproval.callId}/approve`, {
+        method: 'POST',
+      });
+      setPendingApproval(null);
+    } catch (err) {
+      console.error('Failed to approve action:', err);
+    }
+  }, [pendingApproval, taskId]);
+
+  const denyAction = useCallback(async () => {
+    if (!pendingApproval || !taskId) return;
+    try {
+      await fetch(`/api/agent/approval/${taskId}/${pendingApproval.callId}/deny`, {
+        method: 'POST',
+      });
+      setPendingApproval(null);
+    } catch (err) {
+      console.error('Failed to deny action:', err);
+    }
+  }, [pendingApproval, taskId]);
+
+  const setApprovalModeAsync = useCallback(async (mode) => {
+    if (!taskId) return;
+    try {
+      await fetch(`/api/agent/approval/${taskId}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
+      setApprovalMode(mode);
+      if (mode === 'yolo' && pendingApproval) {
+        // Auto-approve pending if switching to YOLO
+        await approveAction();
+      }
+    } catch (err) {
+      console.error('Failed to set approval mode:', err);
+    }
+  }, [taskId, pendingApproval, approveAction]);
+
   return {
     messages,
     steps,
     status,
     taskId,
+    selectedAgent,
+    setSelectedAgent,
+    currentAgentInfo,
     browserState,
     fileVersion,
     chatHistory,
@@ -501,6 +672,9 @@ export function useAgent() {
     terminalCommands,
     checkpoints,
     todoList,
+    autoSubagent,
+    approvalMode,
+    pendingApproval,
     sendMessage,
     runSubagent,
     resetChat,
@@ -508,5 +682,8 @@ export function useAgent() {
     deleteChat,
     onBrowserEvent,
     onFileOperation,
+    approveAction,
+    denyAction,
+    setApprovalMode: setApprovalModeAsync,
   };
 }
