@@ -4,11 +4,7 @@ import { createToolRegistry } from '../agent/toolRegistry.js';
 import { taskStore } from '../agent/taskStore.js';
 import { sandboxManager } from '../agent/sandboxManager.js';
 import { devServerManager } from '../agent/devServerManager.js';
-import { subagentManager } from '../agent/subagentManager.js';
 import { agentManager } from '../agent/agentManager.js';
-import { chatCompletion } from '../agent/llm.js';
-import { config } from '../config.js';
-import { approvalManager } from '../agent/approvalManager.js';
 import { getSystemPrompt } from '../agent/prompts.js';
 
 export const agentRoutes = Router();
@@ -55,8 +51,6 @@ agentRoutes.post('/run', async (req, res) => {
     task = taskStore.create();
     // Store selected agent on task for reference
     task.agentName = agentName || 'default';
-    // Initialize approval state with default mode 'ask'
-    approvalManager.initTask(task.id, 'ask');
   }
 
   // SSE headers
@@ -150,24 +144,6 @@ agentRoutes.get('/agents', (req, res) => {
   res.json({ agents });
 });
 
-// GET /api/agent/subagents — list subagents (fixed + dynamic)
-agentRoutes.get('/subagents', (req, res) => {
-  try {
-    const subagents = subagentManager.list().map(spec => ({
-      name: spec.name,
-      description: spec.description,
-      systemPrompt: spec.systemPrompt,
-      tools: spec.tools,
-      excludeTools: spec.excludeTools,
-      kind: spec.kind,
-    }));
-    res.json({ subagents });
-  } catch (err) {
-    console.error('[GET /subagents] Error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // GET /api/agent/tools — list available tool names
 agentRoutes.get('/tools', (req, res) => {
   try {
@@ -189,191 +165,6 @@ agentRoutes.get('/tools', (req, res) => {
   }
 });
 
-function extractJsonBlock(text) {
-  if (!text) return null;
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) return null;
-  const candidate = text.slice(first, last + 1);
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return null;
-  }
-}
-
-// POST /api/agent/subagents/generate — generate description/system prompt from idea
-agentRoutes.post('/subagents/generate', async (req, res) => {
-  const { idea, name } = req.body || {};
-  const seed = (idea || name || '').trim();
-  if (!seed) {
-    return res.status(400).json({ error: 'idea or name required' });
-  }
-
-  const messages = [
-    {
-      role: 'system',
-      content: [
-        'You generate subagent configuration text.',
-        'Return ONLY valid JSON with keys: "description" and "system_prompt".',
-        'The description must start with: "Use this agent when..." and clearly explain when to invoke it.',
-        'Make the description 2-5 sentences. It should read like user-facing guidance.',
-        'The system_prompt must start with: "You are..." and sound like a role definition.',
-        'Make the system_prompt 4-8 sentences with concrete responsibilities and expected output.',
-        'Do not use markdown headings or bullet points; use plain sentences.',
-        'The system_prompt should mention correctness, minimal changes, and concise summaries.',
-        'The system_prompt should include the expected output format (short summary + actionable next steps).',
-        'Ensure wording is specific to the given idea.',
-        'Tone: professional and concise.',
-        'Do not include the literal strings "Description" or "System prompt" in the content.',
-        'Do not include markdown or extra keys.',
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: `Subagent idea: ${seed}\nName (if provided): ${name || ''}`,
-    },
-  ];
-
-  try {
-    const completion = await chatCompletion({
-      messages,
-      modelOverride: config.mainModel,
-    });
-    const content = completion?.choices?.[0]?.message?.content || '';
-    const parsed = extractJsonBlock(content);
-    if (!parsed || !parsed.description || !parsed.system_prompt) {
-      return res.status(500).json({ error: 'Failed to generate subagent spec.' });
-    }
-    res.json({
-      description: String(parsed.description).trim(),
-      system_prompt: String(parsed.system_prompt).trim(),
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/agent/subagents — create dynamic subagent
-agentRoutes.post('/subagents', (req, res) => {
-  const { name, description, system_prompt, tools, exclude_tools } = req.body || {};
-  try {
-    const created = subagentManager.addDynamic({
-      name,
-      description,
-      systemPrompt: system_prompt,
-      tools,
-      excludeTools: exclude_tools,
-    });
-    res.json({
-      created: true,
-      subagent: {
-        name: created.name,
-        description: created.description,
-        tools: created.tools,
-        excludeTools: created.excludeTools,
-        kind: created.kind,
-      },
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// PUT /api/agent/subagents/:name — update dynamic subagent
-agentRoutes.put('/subagents/:name', (req, res) => {
-  const { name: newName, description, system_prompt, tools, exclude_tools } = req.body || {};
-  // Only include fields that were actually provided (not undefined)
-  const updates = {};
-  if (newName !== undefined) updates.name = newName;
-  if (description !== undefined) updates.description = description;
-  if (system_prompt !== undefined) updates.systemPrompt = system_prompt;
-  if (tools !== undefined) updates.tools = tools;
-  if (exclude_tools !== undefined) updates.excludeTools = exclude_tools;
-  try {
-    const updated = subagentManager.updateDynamic(req.params.name, updates);
-    res.json({
-      updated: true,
-      subagent: {
-        name: updated.name,
-        description: updated.description,
-        systemPrompt: updated.systemPrompt,
-        tools: updated.tools,
-        excludeTools: updated.excludeTools,
-        kind: updated.kind,
-      },
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// DELETE /api/agent/subagents/:name — delete dynamic subagent
-agentRoutes.delete('/subagents/:name', (req, res) => {
-  try {
-    subagentManager.deleteDynamic(req.params.name);
-    res.json({ deleted: true, name: req.params.name });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// POST /api/agent/subagents/run — dispatch a subagent task (SSE)
-agentRoutes.post('/subagents/run', async (req, res) => {
-  const { taskId, subagent_name, prompt } = req.body || {};
-
-  if (!taskId) {
-    return res.status(400).json({ error: 'taskId required' });
-  }
-  try {
-    const parentTask = taskStore.get(taskId);
-    if (parentTask.kind === 'subagent') {
-      return res.status(400).json({ error: 'Subagent tasks must attach to a main session.' });
-    }
-  } catch (err) {
-    return res.status(404).json({ error: err.message });
-  }
-  if (!subagent_name || !prompt) {
-    return res.status(400).json({ error: 'subagent_name and prompt required' });
-  }
-
-  const subagent = subagentManager.get(subagent_name);
-  if (!subagent) {
-    return res.status(404).json({ error: `Subagent not found: ${subagent_name}` });
-  }
-
-  // SSE headers
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    'Connection': 'keep-alive',
-  });
-
-  const sse = createSafeSSE(res);
-
-  try {
-    const sandbox = await sandboxManager.getOrCreate(taskId);
-    const sandboxGetter = () => Promise.resolve(sandbox);
-    const registry = createToolRegistry(sandboxGetter);
-    const orchestrator = new AgentOrchestrator(registry, taskStore);
-
-    const output = await orchestrator.runSubagent({
-      subagent,
-      prompt,
-      parentTaskId: taskId,
-      onEvent: (event) => {
-        sse.write(event);
-      },
-    });
-
-    sse.write({ type: 'subagent_complete', subagent: subagent_name, output });
-  } catch (err) {
-    sse.write({ type: 'subagent_error', subagent: subagent_name, message: err.message });
-  }
-
-  sse.end();
-});
-
 // DELETE /api/agent/task/:id — kill sandbox and clean up task
 agentRoutes.delete('/task/:id', async (req, res) => {
   try {
@@ -382,58 +173,7 @@ agentRoutes.delete('/task/:id', async (req, res) => {
       await devServerManager.killAllForTask(req.params.id, sandbox);
     }
     await sandboxManager.kill(req.params.id);
-    approvalManager.cleanup(req.params.id);
     res.json({ deleted: true });
-  } catch (err) {
-    res.status(404).json({ error: err.message });
-  }
-});
-
-// POST /api/agent/approval/:taskId/mode — set approval mode (ask, auto, yolo)
-agentRoutes.post('/approval/:taskId/mode', (req, res) => {
-  try {
-    const { mode } = req.body;
-    if (!['ask', 'auto', 'yolo'].includes(mode)) {
-      return res.status(400).json({ error: 'Invalid mode. Must be: ask, auto, or yolo' });
-    }
-    approvalManager.setMode(req.params.taskId, mode);
-    res.json({ taskId: req.params.taskId, mode });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// POST /api/agent/approval/:taskId/:callId/approve — approve a pending tool call
-agentRoutes.post('/approval/:taskId/:callId/approve', (req, res) => {
-  try {
-    approvalManager.approve(req.params.taskId, req.params.callId);
-    res.json({ approved: true, callId: req.params.callId });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// POST /api/agent/approval/:taskId/:callId/deny — deny a pending tool call
-agentRoutes.post('/approval/:taskId/:callId/deny', (req, res) => {
-  try {
-    approvalManager.deny(req.params.taskId, req.params.callId);
-    res.json({ denied: true, callId: req.params.callId });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// GET /api/agent/approval/:taskId — get approval state for a task
-agentRoutes.get('/approval/:taskId', (req, res) => {
-  try {
-    const state = approvalManager.getTaskState(req.params.taskId);
-    const pending = approvalManager.getPendingApprovals(req.params.taskId);
-    res.json({
-      taskId: req.params.taskId,
-      mode: state?.mode || 'ask',
-      hasApprovedOnce: state?.hasApprovedOnce || false,
-      pendingApprovals: pending,
-    });
   } catch (err) {
     res.status(404).json({ error: err.message });
   }

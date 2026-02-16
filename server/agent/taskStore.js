@@ -32,7 +32,6 @@ class TaskStore {
 
   list() {
     return Array.from(this.tasks.values())
-      .filter(t => t.kind !== 'subagent')
       .map(t => ({
         id: t.id,
         status: t.status,

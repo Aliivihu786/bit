@@ -1,13 +1,6 @@
 import { chatCompletion } from './llm.js';
-import { getSystemPrompt, SYSTEM_PROMPT } from './prompts.js';
+import { getSystemPrompt } from './prompts.js';
 import { config } from '../config.js';
-import {
-  autoSelectSubagent,
-  autoSelectSubagentLLM,
-  buildAutoSubagentPrompt,
-  buildSubagentBatchPrompt,
-  planSubagentDecomposition,
-} from './subagentRouter.js';
 import {
   ContextWindowGuard,
   createForceCompletionPrompt,
@@ -317,148 +310,10 @@ function applyPendingDmail(task, addMarker = true) {
   return true;
 }
 
-const MIN_SUBAGENT_OUTPUT_LENGTH = 200;
-const MAX_CONTINUE_ATTEMPTS = 1;
-const CONTINUE_PROMPT = `Your previous response was too brief. Please provide a more comprehensive answer with:
-- Specific technical details and implementations
-- Complete code examples if relevant
-- Detailed findings and analysis
-- All important information that the caller should be aware of`;
-
-const SUBAGENT_SECTIONS_TO_STRIP = [
-  /## Subagents:[\s\S]*?(?=\n## |\n*$)/,
-  /## Available Subagents:[\s\S]*?(?=\n## |\n*$)/,
-  /## Project Scaffold Tool[\s\S]*?(?=\n## |\n*$)/,
-];
-
-const SUBAGENT_OVERLAY = (name) => `
-
-## Subagent Role
-You are a subagent named "${name}". You are running as an isolated worker dispatched by the main agent. All "user" messages come from the main agent, not a human.
-
-- You run in an isolated context — you cannot see the main agent's conversation history.
-- All necessary background is provided in the prompt. Do not ask for more context.
-- Keep your final response concise and focused on results.
-- You cannot spawn or manage subagents.
-- When done, provide a comprehensive summary of what you accomplished and any issues found.
-- Before finishing, verify your work has no errors — run code, check files, confirm output is correct.`;
-
-function buildSubagentSystemPrompt(name, customPrompt, parentSystemPrompt) {
-  // Start from the full main agent prompt, strip sections a subagent should not see
-  let prompt = parentSystemPrompt || '';
-  for (const re of SUBAGENT_SECTIONS_TO_STRIP) {
-    prompt = prompt.replace(re, '');
-  }
-
-  // Append subagent-specific overlay
-  prompt += SUBAGENT_OVERLAY(name);
-
-  if (customPrompt) {
-    prompt += `\n\n## Your Specialization:\n${customPrompt}`;
-  }
-
-  return prompt;
-}
-
 export class AgentOrchestrator {
   constructor(toolRegistry, taskStore) {
     this.toolRegistry = toolRegistry;
     this.taskStore = taskStore;
-  }
-
-  async _workspaceIsEmpty(taskId) {
-    try {
-      const result = await this.toolRegistry.executeTool(
-        'file_manager',
-        { action: 'list', path: '' },
-        { taskId, allowedTools: ['file_manager'], excludedTools: [] },
-      );
-      const parsed = JSON.parse(result);
-      const entries = Array.isArray(parsed.entries) ? parsed.entries : [];
-      return entries.length === 0;
-    } catch {
-      return false;
-    }
-  }
-
-  _queueDeferredSubagent(taskId, subagent, prompt) {
-    try {
-      const task = this.taskStore.get(taskId);
-      if (!task._pendingSubagentsAfterWorkspace) {
-        task._pendingSubagentsAfterWorkspace = [];
-      }
-      const exists = task._pendingSubagentsAfterWorkspace
-        .some(item => item.subagent?.name === subagent.name);
-      if (!exists) {
-        task._pendingSubagentsAfterWorkspace.push({
-          subagent,
-          prompt,
-        });
-      }
-    } catch {
-      // ignore if task missing
-    }
-  }
-
-  async _flushDeferredSubagents(taskId, onEvent) {
-    let pending = [];
-    try {
-      const task = this.taskStore.get(taskId);
-      pending = Array.isArray(task._pendingSubagentsAfterWorkspace)
-        ? task._pendingSubagentsAfterWorkspace
-        : [];
-      if (pending.length === 0) return;
-      task._pendingSubagentsAfterWorkspace = [];
-    } catch {
-      return;
-    }
-
-    for (const item of pending) {
-      await this.runSubagent({
-        subagent: item.subagent,
-        prompt: item.prompt,
-        parentTaskId: taskId,
-        onEvent,
-        toolCallId: null,
-      });
-    }
-  }
-
-  async _runSubagentBatch(taskId, items, onEvent) {
-    if (!Array.isArray(items) || items.length === 0) return [];
-    const limit = Math.max(1, Number(config.subagentMaxParallel) || 1);
-    const results = new Array(items.length);
-    let index = 0;
-
-    const runNext = async () => {
-      const current = index;
-      index += 1;
-      if (current >= items.length) return;
-      const item = items[current];
-      results[current] = await this.runSubagent({
-        subagent: item.subagent,
-        prompt: item.prompt,
-        parentTaskId: taskId,
-        onEvent,
-        toolCallId: null,
-      });
-      await runNext();
-    };
-
-    const workers = Array.from({ length: Math.min(limit, items.length) }, () => runNext());
-    await Promise.all(workers);
-    return results;
-  }
-
-  _formatSubagentAggregation(outputs) {
-    if (!Array.isArray(outputs) || outputs.length === 0) return '';
-    return outputs
-      .map((entry) => {
-        const header = entry.title ? `${entry.name} — ${entry.title}` : entry.name;
-        const content = (entry.output || '').trim();
-        return `### ${header}\n${content || '(no output)'}`;
-      })
-      .join('\n\n');
   }
 
   async run(taskId, userMessage, onEvent, options = {}) {
@@ -480,157 +335,6 @@ export class AgentOrchestrator {
       try { onEvent(event); } catch { /* client disconnected */ }
     };
 
-    // Auto-select and delegate to a subagent before the main agent runs
-    if (!options.isSubagent && this.toolRegistry.subagentManager) {
-      const list = this.toolRegistry.subagentManager.list();
-      let handled = false;
-
-      if (config.subagentDecompose) {
-        const plan = await planSubagentDecomposition(userMessage, list);
-        if (plan?.tasks?.length) {
-          const grouped = new Map();
-          const mainTasks = [];
-
-          for (const taskItem of plan.tasks) {
-            let assigned = null;
-            if (taskItem.subagent && taskItem.subagent !== 'none') {
-              assigned = list.find(s => s.name === taskItem.subagent) || null;
-            }
-            if (!assigned) {
-              const fallback = autoSelectSubagent(taskItem.prompt, list);
-              if (fallback) assigned = fallback.subagent;
-            }
-            if (!assigned) {
-              mainTasks.push(taskItem);
-              continue;
-            }
-            if (!grouped.has(assigned.name)) {
-              grouped.set(assigned.name, { subagent: assigned, tasks: [] });
-            }
-            grouped.get(assigned.name).tasks.push(taskItem);
-          }
-
-          const batchItems = Array.from(grouped.values()).map((entry) => ({
-            subagent: entry.subagent,
-            tasks: entry.tasks,
-            prompt: buildSubagentBatchPrompt(userMessage, entry.tasks),
-          }));
-
-          if (batchItems.length > 0) {
-            safeEvent({
-              type: 'subagent_auto_plan',
-              reason: plan.reason || '',
-              subagents: batchItems.map(item => ({
-                name: item.subagent.name,
-                description: item.subagent.description || '',
-                tasks: item.tasks.map(t => t.title || t.prompt),
-              })),
-            });
-
-            const shouldDefer = await this._workspaceIsEmpty(taskId);
-            if (shouldDefer) {
-              for (const item of batchItems) {
-                safeEvent({
-                  type: 'subagent_deferred',
-                  subagent: item.subagent.name,
-                  reason: 'Workspace is empty. Waiting for files to be created.',
-                });
-                this._queueDeferredSubagent(taskId, item.subagent, item.prompt);
-              }
-            } else {
-              const outputs = await this._runSubagentBatch(taskId, batchItems, safeEvent);
-              const aggregated = outputs.map((output, index) => ({
-                name: batchItems[index].subagent.name,
-                title: batchItems[index].tasks.map(t => t.title).filter(Boolean).join(', '),
-                output,
-              }));
-              const summary = this._formatSubagentAggregation(aggregated);
-              if (summary) {
-                task.messages.push({
-                  role: 'system',
-                  content: `Subagent findings:\n${summary}`,
-                });
-              }
-              if (mainTasks.length > 0) {
-                const mainList = mainTasks
-                  .map(t => `- ${t.title || t.prompt}`)
-                  .join('\n');
-                task.messages.push({
-                  role: 'system',
-                  content: `Subtasks for the main agent to handle:\n${mainList}`,
-                });
-              }
-
-              if (config.subagentReviewer) {
-                const reviewer = list.find(s => s.name === config.subagentReviewer);
-                if (reviewer) {
-                  const reviewPrompt = [
-                    'Review the following subagent findings for gaps, errors, or missing work.',
-                    'Return actionable feedback for the main agent.',
-                    '',
-                    summary || '(no findings)',
-                  ].join('\n');
-                  const reviewOutput = await this.runSubagent({
-                    subagent: reviewer,
-                    prompt: reviewPrompt,
-                    parentTaskId: taskId,
-                    onEvent: safeEvent,
-                    toolCallId: null,
-                  });
-                  if (reviewOutput) {
-                    task.messages.push({
-                      role: 'system',
-                      content: `Reviewer "${reviewer.name}" feedback:\n${reviewOutput}`,
-                    });
-                  }
-                }
-              }
-            }
-
-            handled = true;
-          }
-        }
-      }
-
-      if (!handled) {
-        let candidate = autoSelectSubagent(userMessage, list);
-        if (!candidate) {
-          candidate = await autoSelectSubagentLLM(userMessage, list);
-        }
-        if (candidate) {
-          const shouldDefer = await this._workspaceIsEmpty(taskId);
-          if (shouldDefer) {
-            safeEvent({
-              type: 'subagent_deferred',
-              subagent: candidate.subagent.name,
-              reason: 'Workspace is empty. Waiting for files to be created.',
-            });
-            this._queueDeferredSubagent(taskId, candidate.subagent, buildAutoSubagentPrompt(userMessage));
-          } else {
-            safeEvent({
-              type: 'subagent_auto_selected',
-              subagent: candidate.subagent.name,
-              description: candidate.subagent.description || '',
-              reason: candidate.reason || '',
-              score: candidate.score || 0,
-            });
-            const subPrompt = buildAutoSubagentPrompt(userMessage);
-            const subOutput = await this.runSubagent({
-              subagent: candidate.subagent,
-              prompt: subPrompt,
-              parentTaskId: taskId,
-              onEvent: safeEvent,
-              toolCallId: null,
-            });
-            task.messages.push({
-              role: 'system',
-              content: `Auto-selected subagent "${candidate.subagent.name}" summary:\n${subOutput}`,
-            });
-          }
-        }
-      }
-    }
-
     task.messages.push({ role: 'user', content: userMessage });
 
     let iterations = 0;
@@ -641,7 +345,7 @@ export class AgentOrchestrator {
     const modelName = options.modelName || config.mainModel;
     const toolModel = options.toolModel
       || config.toolModel
-      || (modelName === 'deepseek-reasoner' ? config.subagentModel : modelName);
+      || modelName;
 
     // Initialize context window guard for this task
     const contextGuard = new ContextWindowGuard({ model: modelName });
@@ -688,7 +392,7 @@ export class AgentOrchestrator {
         const lastCompactIter = task._lastCompactIteration || 0;
         if (contextStatus.shouldCompact && iterations - lastCompactIter >= 3) {
           task._lastCompactIteration = iterations;
-          const compactionModel = config.compactionModel || config.subagentModel || config.mainModel;
+          const compactionModel = config.compactionModel || config.mainModel;
           const compacted = await smartCompactMessages({
             messages: task.messages,
             modelName: compactionModel,
@@ -718,19 +422,6 @@ export class AgentOrchestrator {
           include: options.allowedTools,
           exclude: options.excludedTools,
         });
-        // Emit subagent catalog only on the first iteration of the main agent (not inside subagent runs)
-        if (!options.isSubagent && iterations === 1 && this.toolRegistry.subagentManager) {
-          const subagents = this.toolRegistry.subagentManager.list().map(spec => ({
-            name: spec.name,
-            description: spec.description,
-          }));
-          safeEvent({
-            type: 'subagent_catalog',
-            iteration: iterations,
-            subagents,
-          });
-        }
-
         const response = await chatCompletion({
           messages: [
             { role: 'system', content: systemPrompt },
@@ -830,11 +521,9 @@ export class AgentOrchestrator {
             let result;
             let llmResult; // stripped version for LLM (no bulky HTML)
             try {
-              const approvalTaskId = options.parentTaskId || taskId;
               result = await this.toolRegistry.executeTool(toolName, toolArgs, {
-                taskId: approvalTaskId,
+                taskId,
                 onEvent: safeEvent,
-                runSubagent: this.runSubagent.bind(this),
                 allowedTools: options.allowedTools,
                 excludedTools: options.excludedTools,
                 toolCallId: toolCall.id,
@@ -865,29 +554,6 @@ export class AgentOrchestrator {
               }
 
               safeEvent({ type: 'tool_result', tool: toolName, result: llmResult, success: true });
-
-              // If workspace changes, run any deferred subagents
-              let shouldFlush = false;
-              if (toolName === 'file_manager') {
-                try {
-                  const parsed = JSON.parse(llmResult || '{}');
-                  if (parsed.written || parsed.created || parsed.deleted) {
-                    shouldFlush = true;
-                  }
-                } catch {
-                  // ignore parse errors
-                }
-              }
-              if (toolName === 'project_scaffold' || toolName === 'canvas') {
-                shouldFlush = true;
-              }
-              if (toolName === 'code_executor') {
-                // Code exec may create files; check workspace quickly if any deferred
-                shouldFlush = true;
-              }
-              if (shouldFlush) {
-                await this._flushDeferredSubagents(taskId, safeEvent);
-              }
             } catch (err) {
               llmResult = JSON.stringify({ error: err.message });
               safeEvent({ type: 'tool_result', tool: toolName, result: llmResult, success: false });
@@ -1086,7 +752,7 @@ export class AgentOrchestrator {
             task.status = 'completed';
             task.result = followMessage.content;
             safeEvent({ type: 'complete', content: followMessage.content || '' });
-          } catch (err) {
+          } catch {
             task.status = 'completed';
             safeEvent({ type: 'complete', content: 'Task completed.' });
           }
@@ -1135,129 +801,6 @@ export class AgentOrchestrator {
       safeEvent({ type: 'complete', content: 'Task completed. The agent used all available steps to work on your request.' });
     }
     return task;
-  }
-
-  async runSubagent({ subagent, prompt, parentTaskId, onEvent, toolCallId }) {
-    if (parentTaskId) {
-      const empty = await this._workspaceIsEmpty(parentTaskId);
-      if (empty) {
-        this._queueDeferredSubagent(parentTaskId, subagent, prompt);
-        try {
-          onEvent?.({
-            type: 'subagent_deferred',
-            subagent: subagent.name,
-            reason: 'Workspace is empty. Waiting for files to be created.',
-            toolCallId: toolCallId || null,
-          });
-        } catch {}
-        return '';
-      }
-    }
-    // Inherit the full main agent prompt, strip subagent/scaffold sections, add subagent overlay
-    const parentPrompt = await getSystemPrompt();
-    const subPrompt = subagent.systemPrompt?.trim() || '';
-    const systemPromptOverride = buildSubagentSystemPrompt(subagent.name, subPrompt, parentPrompt);
-
-    const defaultExcluded = new Set(['task', 'create_subagent', 'project_scaffold', 'dmail', 'set_todo_list']);
-    const extraExcluded = Array.isArray(subagent.excludeTools) ? subagent.excludeTools : [];
-    extraExcluded.forEach(t => defaultExcluded.add(t));
-
-    let allowedTools = null;
-    if (Array.isArray(subagent.tools) && subagent.tools.length > 0) {
-      allowedTools = subagent.tools.filter(t => !defaultExcluded.has(t));
-    }
-
-    const excludedTools = allowedTools ? [] : Array.from(defaultExcluded);
-
-    const subTask = this.taskStore.create({
-      kind: 'subagent',
-      parentId: parentTaskId,
-      subagentName: subagent.name,
-    });
-
-    // Safe emit that won't crash if SSE connection is dead
-    const safeEmit = (event) => {
-      try { onEvent?.(event); } catch { /* client disconnected */ }
-    };
-
-    const wrappedEvent = (event) => {
-      if (event?.type === 'approval_required') {
-        safeEmit({
-          ...event,
-          subagent: subagent.name,
-          message: event.message
-            ? `${event.message} (subagent: ${subagent.name})`
-            : `Approve ${event.toolName}? (subagent: ${subagent.name})`,
-        });
-        return;
-      }
-      safeEmit({
-        type: 'subagent_event',
-        subagent: subagent.name,
-        toolCallId: toolCallId || null,
-        event,
-      });
-    };
-
-    // Emit start marker so the UI knows a subagent is running
-    safeEmit({
-      type: 'subagent_start',
-      subagent: subagent.name,
-      description: subagent.description || '',
-      toolCallId: toolCallId || null,
-    });
-
-    const runOptions = {
-      systemPromptOverride,
-      modelName: config.subagentModel,
-      maxIterations: config.subagentMaxIterations,
-      allowedTools,
-      excludedTools,
-      isSubagent: true,
-      parentTaskId,
-    };
-
-    let resultTask = await this.run(
-      subTask.id,
-      prompt,
-      wrappedEvent,
-      runOptions,
-    );
-
-    // Continuation: if output is too short, retry once with a continuation prompt (like kimi-cli)
-    const output = resultTask.result || '';
-    if (output.length < MIN_SUBAGENT_OUTPUT_LENGTH) {
-      for (let attempt = 0; attempt < MAX_CONTINUE_ATTEMPTS; attempt++) {
-        safeEmit({
-          type: 'subagent_event',
-          subagent: subagent.name,
-          toolCallId: toolCallId || null,
-          event: { type: 'status', message: 'Response too brief, requesting more detail...' },
-        });
-
-        // Continue the same subagent task with the continuation prompt
-        resultTask = await this.run(
-          subTask.id,
-          CONTINUE_PROMPT,
-          wrappedEvent,
-          runOptions,
-        );
-
-        if ((resultTask.result || '').length >= MIN_SUBAGENT_OUTPUT_LENGTH) break;
-      }
-    }
-
-    const finalOutput = resultTask.result || output;
-
-    // Emit done marker
-    safeEmit({
-      type: 'subagent_done',
-      subagent: subagent.name,
-      toolCallId: toolCallId || null,
-      output: finalOutput.slice(0, 200),
-    });
-
-    return finalOutput;
   }
 }
 

@@ -5,18 +5,13 @@ import { FileManagerTool } from '../tools/fileManager.js';
 import { MemoryTool } from '../tools/memoryTool.js';
 import { CanvasTool } from '../tools/canvasTool.js';
 import { ProjectScaffoldTool } from '../tools/projectScaffold.js';
-import { SubagentTaskTool } from '../tools/subagentTask.js';
-import { CreateSubagentTool } from '../tools/createSubagent.js';
 import { DMailTool } from '../tools/dmailTool.js';
 import { ThinkTool } from '../tools/thinkTool.js';
 import { TodoTool } from '../tools/todoTool.js';
-import { subagentManager } from './subagentManager.js';
-import { approvalManager } from './approvalManager.js';
 
 class ToolRegistry {
   constructor() {
     this.tools = new Map();
-    this.subagentManager = null;
   }
 
   register(tool) {
@@ -50,37 +45,12 @@ class ToolRegistry {
       }
     }
 
-    // Check if approval is required for this tool call
-    const needsApproval = approvalManager.requiresApproval(name, args);
-    if (needsApproval && context?.taskId) {
-      const toolCallId = context.toolCallId || `call_${Date.now()}`;
-
-      // Emit approval request event to UI
-      context?.onEvent?.({
-        type: 'approval_required',
-        toolCallId,
-        toolName: name,
-        args,
-        message: `Approve ${name}?`,
-      });
-
-      try {
-        // Wait for user approval
-        await approvalManager.requestApproval(context.taskId, toolCallId, name, args);
-        console.log(`[TOOL REGISTRY] Approval granted for ${name}`);
-      } catch (err) {
-        console.log(`[TOOL REGISTRY] Approval denied for ${name}: ${err.message}`);
-        throw new Error(`User denied approval: ${err.message}`);
-      }
-    }
-
     return tool.execute(args, context);
   }
 }
 
 export function createToolRegistry(sandboxGetter) {
   const registry = new ToolRegistry();
-  registry.subagentManager = subagentManager;
   registry.register(new WebSearchTool());
   registry.register(new WebBrowserTool()); // Read-only: goto, get_text, get_links
   registry.register(new CodeExecutorTool(sandboxGetter));
@@ -88,8 +58,6 @@ export function createToolRegistry(sandboxGetter) {
   registry.register(new MemoryTool());
   registry.register(new CanvasTool(sandboxGetter)); // Also writes to workspace
   registry.register(new ProjectScaffoldTool(sandboxGetter));
-  registry.register(new SubagentTaskTool(registry.subagentManager));
-  registry.register(new CreateSubagentTool(registry.subagentManager));
   registry.register(new DMailTool());
   registry.register(new ThinkTool());
   registry.register(new TodoTool());

@@ -3,16 +3,37 @@ import { config } from '../config.js';
 import { getAuthProfileManager } from './authProfiles.js';
 
 // Legacy single-client mode (fallback if no profiles configured)
-const legacyClient = config.deepseekApiKey ? new OpenAI({
-  apiKey: config.deepseekApiKey,
-  baseURL: 'https://api.deepseek.com/v1',
-}) : null;
+const legacyClient = (() => {
+  // Prefer Moonshot for OpenAI-compatible fallback.
+  if (config.moonshotApiKey) {
+    return new OpenAI({
+      apiKey: config.moonshotApiKey,
+      baseURL: config.moonshotBaseUrl,
+    });
+  }
+
+  if (config.deepseekApiKey) {
+    return new OpenAI({
+      apiKey: config.deepseekApiKey,
+      baseURL: 'https://api.deepseek.com/v1',
+    });
+  }
+
+  return null;
+})();
 
 const MAX_RETRIES = 5;
 const BASE_DELAY_MS = 3000;
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+function resolveTemperature({ model, provider }) {
+  // Moonshot kimi-k2.5 currently accepts temperature=1 only.
+  if (provider === 'moonshot') return 1;
+  if (typeof model === 'string' && model.toLowerCase().includes('kimi-k2.5')) return 1;
+  return 0.2;
 }
 
 /**
@@ -28,7 +49,7 @@ export async function chatCompletion({ messages, tools, toolChoice = 'auto', mod
 
   // Fallback to legacy single-client mode
   if (!legacyClient) {
-    throw new Error('No API key configured. Set DEEPSEEK_API_KEY or other provider keys.');
+    throw new Error('No API key configured. Set MOONSHOT_API_KEY, DEEPSEEK_API_KEY, or another provider key.');
   }
 
   return chatCompletionLegacy({ messages, tools, toolChoice, modelOverride });
@@ -40,11 +61,12 @@ export async function chatCompletion({ messages, tools, toolChoice = 'auto', mod
 async function chatCompletionWithFailover({ messages, tools, toolChoice, modelOverride }) {
   const profileManager = getAuthProfileManager();
 
-  return profileManager.executeWithFailover(async (client, model) => {
+  return profileManager.executeWithFailover(async (client, model, profile) => {
+    const selectedModel = modelOverride || model;
     const params = {
-      model: modelOverride || model,
+      model: selectedModel,
       messages,
-      temperature: 0.2,
+      temperature: resolveTemperature({ model: selectedModel, provider: profile?.provider }),
       max_tokens: 4096,
     };
 
@@ -61,10 +83,12 @@ async function chatCompletionWithFailover({ messages, tools, toolChoice, modelOv
  * Legacy single-client chat completion (with retries)
  */
 async function chatCompletionLegacy({ messages, tools, toolChoice, modelOverride }) {
+  const selectedModel = modelOverride || config.mainModel || 'kimi-k2.5';
+  const selectedProvider = config.moonshotApiKey ? 'moonshot' : 'deepseek';
   const params = {
-    model: modelOverride || 'deepseek-chat',
+    model: selectedModel,
     messages,
-    temperature: 0.2,
+    temperature: resolveTemperature({ model: selectedModel, provider: selectedProvider }),
     max_tokens: 4096,
   };
 

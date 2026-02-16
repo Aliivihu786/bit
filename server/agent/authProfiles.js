@@ -25,6 +25,10 @@ const DEFAULT_COOLDOWN_MS = 5 * 60 * 1000;
 
 // Provider configurations
 const PROVIDER_CONFIGS = {
+  moonshot: {
+    baseURL: 'https://api.moonshot.ai/v1',
+    defaultModel: 'kimi-k2.5',
+  },
   deepseek: {
     baseURL: 'https://api.deepseek.com/v1',
     defaultModel: 'deepseek-chat',
@@ -137,11 +141,12 @@ export class AuthProfileManager {
 
   /**
    * Load profiles from environment variables
-   * Supports: DEEPSEEK_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, etc.
+   * Supports: MOONSHOT_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, etc.
    * Also supports numbered keys: DEEPSEEK_API_KEY_2, DEEPSEEK_API_KEY_3
    */
   loadFromEnv() {
     const envMappings = [
+      { envKey: 'MOONSHOT_API_KEY', provider: 'moonshot', priority: -10 },
       { envKey: 'DEEPSEEK_API_KEY', provider: 'deepseek', priority: 0 },
       { envKey: 'DEEPSEEK_API_KEY_2', provider: 'deepseek', priority: 1 },
       { envKey: 'DEEPSEEK_API_KEY_3', provider: 'deepseek', priority: 2 },
@@ -223,7 +228,7 @@ export class AuthProfileManager {
 
       try {
         console.log(`[AuthProfileManager] Using profile: ${profile.name} (attempt ${attempt + 1})`);
-        const result = await requestFn(profile.client, profile.model);
+        const result = await requestFn(profile.client, profile.model, profile);
         profile.markSuccess();
         return result;
       } catch (err) {

@@ -1,5 +1,4 @@
 import { getSkillManager } from './skillManager.js';
-import { subagentManager } from './subagentManager.js';
 import { agentManager } from './agentManager.js';
 import fs from 'fs';
 import path from 'path';
@@ -29,14 +28,6 @@ You can use the **think** tool to log internal reasoning or notes without respon
 Use it to keep your own chain-of-thought out of the user-facing response while still recording key reasoning.
 - **Before finishing, ALWAYS verify your work has no errors.** Run the code you wrote, check for syntax errors, test that files were created correctly, and confirm the output is correct. If you find errors, fix them before completing. Never mark a task as done if there are unresolved errors.
 - Do NOT scaffold or create a full project unless the user explicitly asks for it. If the user asks you to write a function, fix a bug, create a single file, or do a small task, just do that directly using file_manager and code_executor. Only use project_scaffold when the user clearly wants a new full project setup (e.g., "create a React app", "scaffold a Next.js project").
-
-## Subagents:
-You can delegate focused subtasks to specialized subagents using the **task** tool.
-- Subagents run in an **isolated context** — they cannot see your conversation history.
-- You MUST provide all necessary background, file paths, and context in the prompt.
-- Use subagents for specific subtasks (e.g., code review, targeted research, focused coding), not for every step.
-- Subagents return a summary when done — use their output to continue your work.
-- To create a new subagent on the fly, use the **create_subagent** tool.
 
 ## Web Browsing:
 You have a **web_browser** tool for reading web pages (articles, documentation, blogs, etc.).
@@ -161,13 +152,6 @@ Do NOT use it for simple tasks like writing a single file, fixing code, answerin
 - For Vite/Next/Nuxt scaffolds, the tool auto-starts a live dev server and returns a preview URL
 `;
 
-function buildSubagentListPrompt() {
-  const list = subagentManager.list();
-  if (!list.length) return '';
-  const lines = list.map(s => `- **${s.name}**: ${s.description}`);
-  return `\n\n## Available Subagents:\nUse the **task** tool with one of these subagent names:\n${lines.join('\n')}\n`;
-}
-
 const GUIDELINES_PATH = path.resolve(process.cwd(), 'bit.md');
 
 function loadGuidelinesPrompt() {
@@ -186,12 +170,12 @@ function loadGuidelinesPrompt() {
   }
 }
 
-// Cache the base prompt (skills + guidelines), subagent list is added dynamically
+// Cache the base prompt (skills + guidelines)
 let cachedBasePrompt = null;
 let skillsLoaded = false;
 
 /**
- * Get the full system prompt including skills and available subagents
+ * Get the full system prompt including skills
  * @param {object} options - Options for building the system prompt
  * @param {string} options.agentName - Name of the agent profile to use (default: 'default')
  */
@@ -213,8 +197,8 @@ export async function getSystemPrompt(options = {}) {
     }
   }
 
-  // Build final prompt: agent's custom system prompt + common context + subagent list
-  const finalPrompt = agent.systemPrompt + cachedBasePrompt + buildSubagentListPrompt();
+  // Build final prompt: agent's custom system prompt + common context
+  const finalPrompt = agent.systemPrompt + cachedBasePrompt;
 
   console.log(`[Prompts] Using agent profile: ${agent.name} (${agent.displayName})`);
 

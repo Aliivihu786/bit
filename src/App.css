@@ -1052,48 +1052,6 @@
   margin-left: 8px;
 }
 
-/* Approval mode button states */
-.approval-btn {
-  position: relative;
-}
-
-.approval-btn.approval-ask {
-  color: #4488ff;
-}
-
-.approval-btn.approval-ask:hover {
-  background: rgba(68, 136, 255, 0.1);
-  color: #5599ff;
-}
-
-.approval-btn.approval-auto {
-  color: #00cc88;
-}
-
-.approval-btn.approval-auto:hover {
-  background: rgba(0, 204, 136, 0.1);
-  color: #00dd99;
-}
-
-.approval-btn.approval-yolo {
-  color: #ff4444;
-  animation: pulse-yolo 2s ease-in-out infinite;
-}
-
-.approval-btn.approval-yolo:hover {
-  background: rgba(255, 68, 68, 0.1);
-  color: #ff5555;
-}
-
-@keyframes pulse-yolo {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
 .send-btn {
   width: 34px;
   height: 34px;
@@ -3702,12 +3660,6 @@
 
 .manual-subagent-clear:hover {
   color: var(--text-primary);
-}
-
-.approval-note {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 6px 0 8px;
 }
 
 .welcome-textarea {

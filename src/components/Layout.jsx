@@ -24,10 +24,7 @@ const LOCAL_COMMANDS = {
 export function Layout() {
   const {
     messages, steps, status, taskId, browserState, fileVersion, chatHistory, activeChatId, lastFileOperation,
-    approvalMode, pendingApproval,
-    selectedAgent, setSelectedAgent, currentAgentInfo,
-    sendMessage, resetChat, loadChat, deleteChat, onFileOperation, checkpoints, autoSubagent, runSubagent,
-    approveAction, denyAction, setApprovalMode,
+    sendMessage, resetChat, loadChat, deleteChat, checkpoints,
   } = useAgent();
   const [activeTab, setActiveTab] = useState('browser');
   const [selectedFile, setSelectedFile] = useState(null);
@@ -80,7 +77,6 @@ export function Layout() {
     }
   });
   const [systemMessages, setSystemMessages] = useState([]);
-  const [subagentOpenRequest, setSubagentOpenRequest] = useState(0);
   const prevBrowserTimestamp = useRef(null);
   const prevFileVersion = useRef(0);
   const settingsMenuRef = useRef(null);
@@ -859,25 +855,6 @@ export function Layout() {
                 <div className="settings-section">
                   <div className="settings-row settings-row-notification">
                     <div className="settings-row-info">
-                      <div className="settings-row-title">Subagents</div>
-                      <div className="settings-row-sub">
-                        Create focused helpers that run in the background for reviews, testing, or research.
-                        Each subagent keeps its own context and reports back with a concise summary.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="settings-action-btn"
-                      onClick={() => {
-                        closeSettingsModal();
-                        setSubagentOpenRequest((value) => value + 1);
-                      }}
-                    >
-                      Configure
-                    </button>
-                  </div>
-                  <div className="settings-row settings-row-notification">
-                    <div className="settings-row-info">
                       <div className="settings-row-title">Agent Team</div>
                       <div className="settings-row-sub">
                         Assemble a team of specialists for bigger projects. Route tasks to the right agent and
@@ -1137,14 +1114,6 @@ export function Layout() {
             status={status}
             checkpoints={checkpoints}
             onSend={handleSend}
-            subagentOpenRequest={subagentOpenRequest}
-            autoSubagent={autoSubagent}
-            runSubagent={runSubagent}
-            approvalMode={approvalMode}
-            onSetApprovalMode={setApprovalMode}
-            pendingApproval={pendingApproval}
-            onApprove={approveAction}
-            onDeny={denyAction}
           />
         </main>
       </div>

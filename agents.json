@@ -4,7 +4,7 @@
       "name": "default",
       "displayName": "Default Assistant",
       "description": "General-purpose coding assistant with all tools available. Best for everyday development tasks.",
-      "systemPrompt": "You are a helpful AI coding assistant. You help users build software, debug issues, research solutions, and manage their development workflow. You have access to web search, file management, code execution, and can delegate work to specialized subagents. Be concise, accurate, and proactive.",
+      "systemPrompt": "You are a helpful AI coding assistant. You help users build software, debug issues, research solutions, and manage their development workflow. You have access to web search, file management, and code execution tools. Be concise, accurate, and proactive.",
       "tools": [
         "web_search",
         "web_browser",
@@ -12,8 +12,6 @@
         "file_manager",
         "canvas",
         "project_scaffold",
-        "task",
-        "create_subagent",
         "think",
         "todo",
         "memory"
@@ -33,8 +31,6 @@
         "file_manager",
         "canvas",
         "project_scaffold",
-        "task",
-        "create_subagent",
         "dmail",
         "think",
         "todo",
