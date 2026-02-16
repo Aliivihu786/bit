@@ -3,6 +3,7 @@ import { Monitor, RefreshCw, ExternalLink } from 'lucide-react';
 
 export function CanvasPreview({ browserState }) {
   const [url, setUrl] = useState('');
+  const [externalUrl, setExternalUrl] = useState('');
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const iframeRef = useRef(null);
@@ -18,6 +19,7 @@ export function CanvasPreview({ browserState }) {
     if (!browserState || browserState.type !== 'canvas') return;
 
     const canvasUrl = browserState.url;
+    const openUrl = browserState.externalUrl || canvasUrl;
     const canvasTitle = browserState.title || 'Canvas Preview';
     const timestamp = browserState.timestamp || Date.now();
 
@@ -27,6 +29,7 @@ export function CanvasPreview({ browserState }) {
     const urlWithTimestamp = withTimestamp(canvasUrl, timestamp);
 
     setUrl(urlWithTimestamp);
+    setExternalUrl(openUrl);
     setTitle(canvasTitle);
     setLoading(true);
 
@@ -57,8 +60,8 @@ export function CanvasPreview({ browserState }) {
   };
 
   const handleOpenExternal = () => {
-    if (url) {
-      window.open(url, '_blank');
+    if (externalUrl || url) {
+      window.open(externalUrl || url, '_blank');
     }
   };
 
@@ -120,7 +123,7 @@ export function CanvasPreview({ browserState }) {
 
       {/* Canvas Info Bar */}
       <div className="canvas-info-bar">
-        <span className="canvas-url">{url}</span>
+        <span className="canvas-url">{externalUrl || url}</span>
         <span className="canvas-status">
           {loading ? 'Loading...' : 'Ready'}
         </span>

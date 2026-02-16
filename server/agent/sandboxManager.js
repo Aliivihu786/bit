@@ -1,7 +1,11 @@
+import { config } from '../config.js';
+
 let SandboxClass = null;
 
 // 1 hour max for hobby plan; set high so long tasks don't expire
-const SANDBOX_TIMEOUT_MS = 3_600_000;
+const SANDBOX_TIMEOUT_MS = Number.isFinite(config.sandboxTimeoutMs) && config.sandboxTimeoutMs > 0
+  ? config.sandboxTimeoutMs
+  : 3_600_000;
 // Extend the sandbox timeout every 3 minutes during active use
 const KEEPALIVE_INTERVAL_MS = 3 * 60 * 1000;
 
@@ -24,10 +28,15 @@ export class SandboxManager {
     const sandbox = await Sandbox.create({
       apiKey: process.env.E2B_API_KEY,
       timeoutMs: SANDBOX_TIMEOUT_MS,
+      network: {
+        allowPublicTraffic: config.sandboxAllowPublicTraffic,
+      },
     });
 
     // Create a workspace directory inside the sandbox
     await sandbox.files.makeDir('/home/user/workspace');
+    // Explicitly extend timeout after creation for long-running generations.
+    await sandbox.setTimeout(SANDBOX_TIMEOUT_MS).catch(() => {});
 
     this.sandboxes.set(taskId, sandbox);
     this._startKeepAlive(taskId, sandbox);
@@ -44,6 +53,8 @@ export class SandboxManager {
       // Check if sandbox is still alive
       try {
         await sandbox.files.list('/home/user/workspace');
+        // Refresh timeout on each successful reuse so active sessions stay alive.
+        await sandbox.setTimeout(SANDBOX_TIMEOUT_MS).catch(() => {});
         return sandbox;
       } catch {
         // Sandbox timed out or died — clean up and recreate
@@ -60,10 +71,7 @@ export class SandboxManager {
     this._stopKeepAlive(taskId);
     const interval = setInterval(async () => {
       try {
-        const Sandbox = await getSandboxClass();
-        await Sandbox.setTimeout(sandbox.sandboxId, SANDBOX_TIMEOUT_MS, {
-          apiKey: process.env.E2B_API_KEY,
-        });
+        await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
       } catch {
         // Sandbox may already be dead, stop trying
         this._stopKeepAlive(taskId);

@@ -127,6 +127,12 @@ The code_executor tool can run code in multiple languages. **Always prefer bash 
 - NPM package testing
 - JavaScript-specific tasks
 
+**Long-running process rule (CRITICAL):**
+- If a command starts a server/watcher (for example: npm run dev, next dev, vite, uvicorn --reload, python manage.py runserver), run it in **background**.
+- After starting it, verify it actually started by checking the latest dev log output.
+- Do NOT block on foreground long-running processes.
+- Dev logs are stored under /home/user/workspace/.bit-agent/dev-logs/.
+
 **Example bash commands:**
 {"language":"bash","code":"ls -la"}
 {"language":"bash","code":"pip install requests"}

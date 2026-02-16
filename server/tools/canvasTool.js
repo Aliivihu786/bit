@@ -154,7 +154,7 @@ EXPLICIT ACTIONS (optional):
     await sandbox.files.write(workspacePath, content);
 
     // URL points to workspace preview endpoint
-    const previewUrl = `http://localhost:3001/api/workspace/${taskId}/preview/${name}`;
+    const previewUrl = `/api/workspace/${taskId}/preview/${name}`;
 
     return JSON.stringify({
       created: true,
@@ -190,7 +190,7 @@ EXPLICIT ACTIONS (optional):
     await sandbox.files.write(workspacePath, content);
 
     // URL points to workspace preview endpoint
-    const previewUrl = `http://localhost:3001/api/workspace/${taskId}/preview/${name}`;
+    const previewUrl = `/api/workspace/${taskId}/preview/${name}`;
 
     return JSON.stringify({
       updated: true,
@@ -209,7 +209,7 @@ EXPLICIT ACTIONS (optional):
         .filter(e => e.type === 'file' && e.name.endsWith('.html'))
         .map(e => ({
           name: e.name,
-          url: taskId ? `http://localhost:3001/api/workspace/${taskId}/preview/${e.name}` : e.name,
+          url: taskId ? `/api/workspace/${taskId}/preview/${e.name}` : e.name,
         }));
 
       return JSON.stringify({
@@ -240,7 +240,7 @@ EXPLICIT ACTIONS (optional):
       return JSON.stringify({
         name,
         content,
-        url: taskId ? `http://localhost:3001/api/workspace/${taskId}/preview/${name}` : name,
+        url: taskId ? `/api/workspace/${taskId}/preview/${name}` : name,
       });
     } catch (err) {
       throw new Error(`Canvas "${name}" not found.`);

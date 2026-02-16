@@ -13,7 +13,8 @@ const CANVAS_HOTRELOAD_SCRIPT = `
 <script>
 (function() {
   // Hot-reload WebSocket connection to canvas server
-  const ws = new WebSocket('ws://localhost:3002/__canvas_ws__');
+  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(protocol + '://' + location.hostname + ':3002/__canvas_ws__');
   ws.onmessage = function(e) {
     if (e.data === 'reload') {
       console.log('[Canvas] Hot-reloading...');
@@ -189,6 +190,68 @@ workspaceRoutes.get('/:taskId/preview/:filename', async (req, res) => {
     res.status(404).send(`File not found: ${err.message}`);
   }
 });
+
+async function proxySandboxService(req, res) {
+  try {
+    const task = taskStore.get(req.params.taskId);
+    const sandbox = sandboxManager.get(task.id);
+
+    if (!sandbox) {
+      return res.status(404).send('Sandbox not active');
+    }
+
+    const port = Number(req.params.port);
+    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+      return res.status(400).send('Invalid port');
+    }
+
+    const relPath = req.params[0] || '';
+    if (relPath.includes('..')) {
+      return res.status(403).send('Path traversal blocked');
+    }
+
+    const host = sandbox.getHost(port);
+    const baseUrl = host.startsWith('http://') || host.startsWith('https://')
+      ? host
+      : `https://${host}`;
+    const targetUrl = new URL(`/${relPath}`, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`);
+
+    const rawQuery = req.originalUrl.split('?')[1];
+    if (rawQuery) {
+      targetUrl.search = rawQuery;
+    }
+
+    const headers = {};
+    if (typeof req.headers.accept === 'string') headers.accept = req.headers.accept;
+    if (typeof req.headers['user-agent'] === 'string') {
+      headers['user-agent'] = req.headers['user-agent'];
+    }
+    if (sandbox.trafficAccessToken) {
+      headers['e2b-traffic-access-token'] = sandbox.trafficAccessToken;
+    }
+
+    const response = await fetch(targetUrl.toString(), {
+      method: 'GET',
+      headers,
+      redirect: 'follow',
+    });
+
+    res.status(response.status);
+    const passthroughHeaders = ['content-type', 'cache-control', 'etag', 'last-modified'];
+    for (const name of passthroughHeaders) {
+      const value = response.headers.get(name);
+      if (value) res.setHeader(name, value);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.send(buffer);
+  } catch (err) {
+    res.status(502).send(`Preview proxy failed: ${err.message}`);
+  }
+}
+
+// GET /api/workspace/:taskId/preview-service/:port(/path) — proxy sandbox service with traffic token when needed
+workspaceRoutes.get('/:taskId/preview-service/:port', proxySandboxService);
+workspaceRoutes.get('/:taskId/preview-service/:port/*', proxySandboxService);
 
 // GET /api/workspace/:taskId/preview-app/* — serve static files from workspace
 workspaceRoutes.get('/:taskId/preview-app/*', async (req, res) => {

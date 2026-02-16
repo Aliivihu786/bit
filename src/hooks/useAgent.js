@@ -177,10 +177,13 @@ export function useAgent() {
                 const result = JSON.parse(event.result);
                 // Refresh file browser after scaffolding
                 setFileVersion(v => v + 1);
-                if (result.previewUrl) {
+                const previewUrl = result.previewUrl || result.previewProxyUrl;
+                if (previewUrl) {
                   setBrowserState({
                     type: 'canvas',
-                    url: result.previewUrl,
+                    url: previewUrl,
+                    externalUrl: result.previewExternalUrl || result.previewUrl || previewUrl,
+                    requiresAccessToken: Boolean(result.previewAuthHeader),
                     title: result.project?.name || result.framework || 'Preview',
                     timestamp: Date.now(),
                   });

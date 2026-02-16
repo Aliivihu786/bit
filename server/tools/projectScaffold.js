@@ -282,12 +282,13 @@ const FRAMEWORK_RECIPES = [
     label: 'Next.js (React)',
     stack: 'fullstack',
     languages: ['js', 'ts'],
-    createPlan: ({ name, pm, language, install }) => {
+    createPlan: ({ name, pm, language, install, packageManager }) => {
       const langFlag = language === 'ts' ? '--ts' : '--js';
       const devCmd = `${pm.run('dev')} -- --hostname 0.0.0.0 --port 3000`;
+      const pmFlag = getNextPackageManagerFlag(packageManager);
       return {
         commands: [
-          { cmd: `${pm.exec('create-next-app@latest')} ${name} ${langFlag} --eslint --app --src-dir --no-tailwind --no-import-alias`, cwd: WORKSPACE_ROOT },
+          { cmd: `${pm.exec('create-next-app@latest')} ${name} ${langFlag} --yes ${pmFlag} --eslint --app --src-dir --no-tailwind --no-import-alias --skip-install`, cwd: WORKSPACE_ROOT },
           ...(install ? [{ cmd: pm.install(), cwd: `${WORKSPACE_ROOT}/${name}` }] : []),
         ],
         livePreview: {
@@ -345,14 +346,21 @@ const FRAMEWORK_RECIPES = [
         files: [
           {
             path: `${name}/index.js`,
-            content: `const express = require('express');\nconst cors = require('cors');\n\nconst app = express();\napp.use(cors());\napp.use(express.json());\n\napp.get('/api/health', (req, res) => {\n  res.json({ ok: true, message: 'Hello from Express' });\n});\n\nconst port = process.env.PORT || 4000;\napp.listen(port, () => {\n  console.log('Express server running on port', port);\n});\n`,
+            content: `const express = require('express');\nconst cors = require('cors');\n\nconst app = express();\napp.use(cors());\napp.use(express.json());\n\napp.get('/api/health', (req, res) => {\n  res.json({ ok: true, message: 'Hello from Express' });\n});\n\nconst port = Number(process.env.PORT || 4000);\nconst host = process.env.HOST || '0.0.0.0';\napp.listen(port, host, () => {\n  console.log('Express server running on', host + ':' + port);\n});\n`,
           },
         ],
-        devCommand: 'node index.js',
+        livePreview: {
+          cwd: `${WORKSPACE_ROOT}/${name}`,
+          command: 'HOST=0.0.0.0 PORT=4000 node index.js',
+          port: 4000,
+          waitPath: '/api/health',
+          expectedStatus: [200],
+        },
+        devCommand: 'HOST=0.0.0.0 PORT=4000 node index.js',
         nextSteps: [
           `cd ${name}`,
           install ? '' : 'npm install express cors',
-          'node index.js',
+          'HOST=0.0.0.0 PORT=4000 node index.js',
         ].filter(Boolean),
       };
     },
@@ -378,6 +386,13 @@ const FRAMEWORK_RECIPES = [
             content: 'fastapi\nuvicorn\n',
           },
         ],
+        livePreview: {
+          cwd: `${WORKSPACE_ROOT}/${name}`,
+          command: 'uvicorn main:app --host 0.0.0.0 --port 4000 --reload',
+          port: 4000,
+          waitPath: '/api/health',
+          expectedStatus: [200],
+        },
         devCommand: 'uvicorn main:app --host 0.0.0.0 --port 4000 --reload',
         nextSteps: [
           `cd ${name}`,
@@ -405,6 +420,13 @@ const FRAMEWORK_RECIPES = [
             content: 'django\n',
           },
         ],
+        livePreview: {
+          cwd: `${WORKSPACE_ROOT}/${name}`,
+          command: 'python manage.py runserver 0.0.0.0:4000',
+          port: 4000,
+          waitPath: '/api/health',
+          expectedStatus: [200],
+        },
         devCommand: 'python manage.py runserver 0.0.0.0:4000',
         nextSteps: [
           `cd ${name}`,
@@ -428,18 +450,25 @@ const FRAMEWORK_RECIPES = [
         files: [
           {
             path: `${name}/app.py`,
-            content: `from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n@app.get('/api/health')\ndef health():\n    return jsonify({\"ok\": True, \"message\": \"Hello from Flask\"})\n\nif __name__ == '__main__':\n    app.run(host='0.0.0.0', port=4000, debug=True)\n`,
+            content: `from flask import Flask, jsonify\nimport os\n\napp = Flask(__name__)\n\n@app.get('/api/health')\ndef health():\n    return jsonify({\"ok\": True, \"message\": \"Hello from Flask\"})\n\nif __name__ == '__main__':\n    host = os.getenv('HOST', '0.0.0.0')\n    port = int(os.getenv('PORT', 4000))\n    app.run(host=host, port=port, debug=True)\n`,
           },
           {
             path: `${name}/requirements.txt`,
             content: 'flask\n',
           },
         ],
-        devCommand: 'python app.py',
+        livePreview: {
+          cwd: `${WORKSPACE_ROOT}/${name}`,
+          command: 'HOST=0.0.0.0 PORT=4000 python app.py',
+          port: 4000,
+          waitPath: '/api/health',
+          expectedStatus: [200],
+        },
+        devCommand: 'HOST=0.0.0.0 PORT=4000 python app.py',
         nextSteps: [
           `cd ${name}`,
           install ? '' : 'pip install -r requirements.txt',
-          'python app.py',
+          'HOST=0.0.0.0 PORT=4000 python app.py',
         ].filter(Boolean),
       };
     },
@@ -458,7 +487,7 @@ const FRAMEWORK_RECIPES = [
           { cmd: 'mkdir -p backend', cwd: `${WORKSPACE_ROOT}/${name}` },
           { cmd: 'npm init -y', cwd: `${WORKSPACE_ROOT}/${name}/backend` },
           { cmd: 'npm pkg set type=module', cwd: `${WORKSPACE_ROOT}/${name}/backend` },
-          { cmd: 'npm pkg set scripts.dev="node index.js"', cwd: `${WORKSPACE_ROOT}/${name}/backend` },
+          { cmd: 'npm pkg set scripts.dev="HOST=0.0.0.0 PORT=4000 node index.js"', cwd: `${WORKSPACE_ROOT}/${name}/backend` },
           { cmd: `${pm.exec('create-vite@latest')} frontend --template ${template}`, cwd: `${WORKSPACE_ROOT}/${name}` },
           ...(install ? [{ cmd: pm.install(), cwd: `${WORKSPACE_ROOT}/${name}/frontend` }] : []),
           ...(install ? [{ cmd: 'npm install express cors', cwd: `${WORKSPACE_ROOT}/${name}/backend` }] : []),
@@ -466,11 +495,11 @@ const FRAMEWORK_RECIPES = [
         files: [
           {
             path: `${name}/backend/index.js`,
-            content: `import express from 'express';\nimport cors from 'cors';\n\nconst app = express();\napp.use(cors());\napp.use(express.json());\n\napp.get('/api/health', (req, res) => {\n  res.json({ ok: true, message: 'Hello from Express' });\n});\n\nconst port = process.env.PORT || 4000;\napp.listen(port, () => {\n  console.log('Express API running on port', port);\n});\n`,
+            content: `import express from 'express';\nimport cors from 'cors';\n\nconst app = express();\napp.use(cors());\napp.use(express.json());\n\napp.get('/api/health', (req, res) => {\n  res.json({ ok: true, message: 'Hello from Express' });\n});\n\nconst port = Number(process.env.PORT || 4000);\nconst host = process.env.HOST || '0.0.0.0';\napp.listen(port, host, () => {\n  console.log('Express API running on', host + ':' + port);\n});\n`,
           },
           {
             path: `${name}/frontend/src/App.jsx`,
-            content: `import { useEffect, useState } from 'react';\nimport './App.css';\n\nfunction App() {\n  const [message, setMessage] = useState('Loading...');\n\n  useEffect(() => {\n    fetch('http://localhost:4000/api/health')\n      .then((r) => r.json())\n      .then((data) => setMessage(data.message || 'OK'))\n      .catch(() => setMessage('Failed to reach API'));\n  }, []);\n\n  return (\n    <div style={{ padding: 24, fontFamily: 'sans-serif' }}>\n      <h1>React + Express</h1>\n      <p>API says: <strong>{message}</strong></p>\n    </div>\n  );\n}\n\nexport default App;\n`,
+            content: `import { useEffect, useState } from 'react';\nimport './App.css';\n\nfunction getDefaultApiBase() {\n  if (typeof window === 'undefined') return 'http://127.0.0.1:4000';\n  const host = window.location.host;\n  if (/^\\d+-/.test(host)) {\n    return window.location.origin.replace(/^https?:\\/\\/\\d+-/, \`\${window.location.protocol}//4000-\`);\n  }\n  return \`\${window.location.protocol}//\${window.location.hostname}:4000\`;\n}\n\nfunction App() {\n  const [message, setMessage] = useState('Loading...');\n\n  useEffect(() => {\n    const apiBase = import.meta.env.VITE_API_BASE_URL || getDefaultApiBase();\n    fetch(\`\${apiBase}/api/health\`)\n      .then((r) => r.json())\n      .then((data) => setMessage(data.message || 'OK'))\n      .catch(() => setMessage('Failed to reach API'));\n  }, []);\n\n  return (\n    <div style={{ padding: 24, fontFamily: 'sans-serif' }}>\n      <h1>React + Express</h1>\n      <p>API says: <strong>{message}</strong></p>\n    </div>\n  );\n}\n\nexport default App;\n`,
           },
         ],
         preview: {
@@ -479,10 +508,23 @@ const FRAMEWORK_RECIPES = [
           buildCmd: pm.run('build'),
         },
         livePreview: {
+          name: 'frontend',
           cwd: `${WORKSPACE_ROOT}/${name}/frontend`,
           command: devCmd,
           port: 5173,
+          waitPath: '/',
+          expectedStatus: [200, 304],
         },
+        extraLivePreviews: [
+          {
+            name: 'backend',
+            cwd: `${WORKSPACE_ROOT}/${name}/backend`,
+            command: 'npm run dev',
+            port: 4000,
+            waitPath: '/api/health',
+            expectedStatus: [200],
+          },
+        ],
         devCommand: `frontend: ${devCmd}; backend: npm run dev (port 4000)`,
         viteConfigDir: `${WORKSPACE_ROOT}/${name}/frontend`,
         nextSteps: [
@@ -516,6 +558,20 @@ const FRAMEWORK_ALIASES = {
   'react-express': 'react-express',
 };
 
+function getNextPackageManagerFlag(packageManager) {
+  switch (packageManager) {
+    case 'pnpm':
+      return '--use-pnpm';
+    case 'yarn':
+      return '--use-yarn';
+    case 'bun':
+      return '--use-bun';
+    case 'npm':
+    default:
+      return '--use-npm';
+  }
+}
+
 function normalizeName(name) {
   const safe = String(name || '').trim().toLowerCase().replace(/[^a-z0-9-_]/g, '-');
   const collapsed = safe.replace(/-+/g, '-').replace(/^[-_]+|[-_]+$/g, '');
@@ -530,33 +586,79 @@ function getPackageManager(pm) {
 function buildExternalUrl(host) {
   if (!host) return null;
   if (host.startsWith('http://') || host.startsWith('https://')) return host;
-  const isLocal = host.startsWith('localhost') || host.startsWith('127.0.0.1');
-  const scheme = isLocal ? 'http' : 'https';
-  return `${scheme}://${host}`;
+  return `https://${host}`;
+}
+
+function toTrailingSlash(url) {
+  if (!url) return null;
+  return url.endsWith('/') ? url : `${url}/`;
+}
+
+function joinUrlPath(baseUrl, path = '/') {
+  if (!baseUrl) return null;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return `${base}${normalizedPath}`;
+}
+
+function getTrafficAccessHeaders(sandbox) {
+  if (!sandbox?.trafficAccessToken) return {};
+  return { 'e2b-traffic-access-token': sandbox.trafficAccessToken };
+}
+
+function buildPreviewTargets({ sandbox, taskId, port }) {
+  const host = sandbox.getHost(port);
+  const externalUrl = toTrailingSlash(buildExternalUrl(host));
+  const proxyUrl = taskId ? `/api/workspace/${taskId}/preview-service/${port}/` : null;
+  return { host, externalUrl, proxyUrl };
 }
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function probeBlockedHost(url) {
+async function probeBlockedHost(url, headers = {}) {
   if (!url) return false;
   try {
-    const resp = await fetch(url, { redirect: 'follow' });
+    const resp = await fetch(url, { redirect: 'follow', headers });
+    if (resp.status === 403) return true;
     const text = await resp.text();
-    return text.includes('Blocked request');
+    return text.includes('Blocked request') || text.includes('blocked host');
   } catch {
     return false;
   }
 }
 
-async function maybeFixViteBlockedHost({ sandbox, taskId, url, viteConfigDir, livePreview }) {
+async function waitForExternalPreview({
+  url,
+  headers = {},
+  expectedStatuses = [200, 204, 301, 302, 304, 307, 308],
+  timeoutMs = 90_000,
+  intervalMs = 1_500,
+}) {
+  if (!url) return { ready: false, status: null, attempts: 0 };
+  const maxAttempts = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const resp = await fetch(url, { redirect: 'follow', headers });
+      if (expectedStatuses.includes(resp.status)) {
+        return { ready: true, status: resp.status, attempts: attempt };
+      }
+    } catch {
+      // keep polling
+    }
+    await sleep(intervalMs);
+  }
+  return { ready: false, status: null, attempts: maxAttempts };
+}
+
+async function maybeFixViteBlockedHost({ sandbox, taskId, url, viteConfigDir, livePreview, headers = {} }) {
   if (!viteConfigDir || !url || !taskId || !livePreview) return { fixed: false };
 
   // Give dev server a moment to boot
   for (let attempt = 0; attempt < 3; attempt++) {
     await sleep(1500 + attempt * 1000);
-    const blocked = await probeBlockedHost(url);
+    const blocked = await probeBlockedHost(url, headers);
     if (!blocked) return { fixed: false };
     // Blocked: patch config and restart once
     await ensureViteAllowedHosts(sandbox, viteConfigDir);
@@ -567,6 +669,12 @@ async function maybeFixViteBlockedHost({ sandbox, taskId, url, viteConfigDir, li
       command: livePreview.command,
       port: livePreview.port,
       restart: true,
+      waitFor: {
+        enabled: true,
+        url: `http://127.0.0.1:${livePreview.port}${livePreview.waitPath || '/'}`,
+        expectedStatus: livePreview.expectedStatus || [200],
+        timeoutMs: livePreview.startupTimeoutMs || 120_000,
+      },
     });
     return { fixed: true };
   }
@@ -615,7 +723,7 @@ Actions:
 
 If the framework is not supported, use action "create" with framework "custom" and provide a "command" to run.
 If a framework supports both JS and TS, you must specify "language".
-Vite/Next/Nuxt scaffolds auto-start a live dev server and return a previewUrl that maps the sandbox port.`;
+Supported frameworks auto-start dev services on fixed ports and return preview URLs mapped from sandbox ports.`;
   }
 
   get parameters() {
@@ -740,7 +848,13 @@ Vite/Next/Nuxt scaffolds auto-start a live dev server and return a previewUrl th
       });
     }
 
-    const plan = recipe.createPlan({ name, pm, language: normalizedLanguage, install });
+    const plan = recipe.createPlan({
+      name,
+      pm,
+      language: normalizedLanguage,
+      install,
+      packageManager: package_manager || 'npm',
+    });
 
     const commandResults = [];
     for (const c of plan.commands || []) {
@@ -771,32 +885,100 @@ Vite/Next/Nuxt scaffolds auto-start a live dev server and return a previewUrl th
     }
 
     let previewUrl = null;
+    let previewExternalUrl = null;
+    let previewProxyUrl = null;
+    let previewAuthHeader = null;
     let buildResult = null;
     let liveResult = null;
     let runtimeFix = null;
+    const serviceUrls = [];
 
-    if (plan.livePreview && install && taskId) {
-      liveResult = await devServerManager.start({
-        taskId,
-        sandbox,
-        cwd: plan.livePreview.cwd,
-        command: plan.livePreview.command,
-        port: plan.livePreview.port,
-      });
+    const liveServices = [
+      ...(plan.livePreview ? [plan.livePreview] : []),
+      ...(Array.isArray(plan.extraLivePreviews) ? plan.extraLivePreviews : []),
+    ];
 
-      const host = sandbox.getHost(plan.livePreview.port);
-      const base = buildExternalUrl(host);
-      if (base) {
-        previewUrl = base.endsWith('/') ? base : `${base}/`;
+    if (liveServices.length > 0 && install && taskId) {
+      const liveResults = [];
+      const authHeaders = getTrafficAccessHeaders(sandbox);
+      const startedServices = await Promise.all(
+        liveServices.map(async (service, index) => {
+          const serviceName = service.name || (index === 0 ? 'frontend' : `service-${index + 1}`);
+          const waitPath = service.waitPath || '/';
+          const expectedStatus = service.expectedStatus || [200, 204, 301, 302, 304];
+
+          const started = await devServerManager.start({
+            taskId,
+            sandbox,
+            cwd: service.cwd,
+            command: service.command,
+            port: service.port,
+            waitFor: {
+              enabled: true,
+              url: `http://127.0.0.1:${service.port}${waitPath}`,
+              expectedStatus,
+              timeoutMs: service.startupTimeoutMs || 120_000,
+            },
+          });
+
+          const previewTargets = buildPreviewTargets({
+            sandbox,
+            taskId,
+            port: service.port,
+          });
+          const externalCheckUrl = joinUrlPath(previewTargets.externalUrl, waitPath);
+          const externalReady = await waitForExternalPreview({
+            url: externalCheckUrl,
+            headers: authHeaders,
+            expectedStatuses: expectedStatus,
+            timeoutMs: service.startupTimeoutMs || 120_000,
+          });
+
+          const embedUrl = sandbox.trafficAccessToken
+            ? previewTargets.proxyUrl
+            : previewTargets.externalUrl;
+
+          const serviceInfo = {
+            name: serviceName,
+            port: service.port,
+            waitPath,
+            url: embedUrl,
+            externalUrl: previewTargets.externalUrl,
+            proxyUrl: previewTargets.proxyUrl,
+            requiresAccessToken: Boolean(sandbox.trafficAccessToken),
+            ready: externalReady.ready,
+            readyStatus: externalReady.status,
+          };
+
+          return { index, started, serviceInfo, previewTargets, embedUrl };
+        }),
+      );
+
+      for (const item of startedServices) {
+        const { index, started, serviceInfo, previewTargets, embedUrl } = item;
+        serviceUrls.push(serviceInfo);
+        liveResults.push({ ...started, ...serviceInfo });
+
+        if (index === 0) {
+          previewUrl = embedUrl;
+          previewExternalUrl = previewTargets.externalUrl;
+          previewProxyUrl = sandbox.trafficAccessToken ? previewTargets.proxyUrl : null;
+          previewAuthHeader = sandbox.trafficAccessToken ? 'e2b-traffic-access-token' : null;
+        }
       }
 
-      runtimeFix = await maybeFixViteBlockedHost({
-        sandbox,
-        taskId,
-        url: previewUrl,
-        viteConfigDir: plan.viteConfigDir,
-        livePreview: plan.livePreview,
-      });
+      if (plan.viteConfigDir && plan.livePreview && previewExternalUrl) {
+        runtimeFix = await maybeFixViteBlockedHost({
+          sandbox,
+          taskId,
+          url: joinUrlPath(previewExternalUrl, plan.livePreview.waitPath || '/'),
+          viteConfigDir: plan.viteConfigDir,
+          livePreview: plan.livePreview,
+          headers: authHeaders,
+        });
+      }
+
+      liveResult = liveResults.length === 1 ? liveResults[0] : liveResults;
     } else if (plan.preview && install) {
       buildResult = await runCommand(sandbox, plan.preview.buildCmd, plan.preview.cwd);
       if (buildResult.exitCode === 0 && taskId) {
@@ -813,6 +995,10 @@ Vite/Next/Nuxt scaffolds auto-start a live dev server and return a previewUrl th
       devCommand: plan.devCommand || null,
       nextSteps: plan.nextSteps || [],
       previewUrl,
+      previewExternalUrl,
+      previewProxyUrl,
+      previewAuthHeader,
+      serviceUrls,
       build: buildResult,
       live: liveResult,
       runtimeFix,
